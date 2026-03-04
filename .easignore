@@ -1,0 +1,6 @@
+# Exclude automated tests from EAS upload/build context
+__tests__/
+
+# Local and test tooling artifacts
+vitest.config.ts
+coverage/
