@@ -6,16 +6,19 @@ node_modules/
 .env.*
 !.env.example
 
-# Build output
+# Build and cache output
 build/
 dist/
 .web-build/
 .expo/
+.expo-shared/
+.cache/
 
 # Test output
 coverage/
 
 # Logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -24,5 +27,18 @@ pnpm-debug.log*
 # TypeScript cache
 *.tsbuildinfo
 
-# OS files
+# Expo native signing files and secrets
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Editor and OS files
+.idea/
+.vscode/
 .DS_Store
+
+# npm lockfile (ignored by request)
+package-lock.json

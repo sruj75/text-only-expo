@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getOrCreateDeviceContext } from "../src/lib/device";
 
 const { getItem, setItem, randomUUID } = vi.hoisted(() => ({
   getItem: vi.fn(),
@@ -16,8 +17,6 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 vi.mock("expo-crypto", () => ({
   randomUUID
 }));
-
-import { getOrCreateDeviceContext } from "../src/lib/device";
 
 describe("getOrCreateDeviceContext", () => {
   beforeEach(() => {

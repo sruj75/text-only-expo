@@ -1,12 +1,17 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "Intentive v0",
+    "slug": "intentive-alpha",
+    "owner": "srujxx",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
     "platforms": [
       "ios"
     ],
     "orientation": "portrait",
+    "scheme": "intentive",
     "userInterfaceStyle": "light",
     "splash": {
       "resizeMode": "contain",
@@ -19,7 +24,19 @@
       "expo-notifications"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "life.intentive.expo",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "c4e705ec-1671-4e31-ba01-43d1bc1234c7"
+      }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c4e705ec-1671-4e31-ba01-43d1bc1234c7"
     }
   }
 }

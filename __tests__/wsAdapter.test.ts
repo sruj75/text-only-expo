@@ -173,7 +173,8 @@ describe("ws adapter", () => {
 
     const stream = adapter.run(runOptions) as AsyncGenerator<any, void, unknown>;
     const updatesPromise = (async () => {
-      for await (const _ of stream) {
+      for await (const update of stream) {
+        void update;
       }
     })();
 
