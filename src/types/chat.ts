@@ -31,6 +31,38 @@ export type ProfileContext = {
 
 export type ChatRole = "user" | "assistant" | "system" | "event";
 
+export type TaskPanelVisibility = "closed" | "preview" | "expanded";
+export type TaskPanelRunStatus = "idle" | "running" | "complete" | "error";
+
+export type TaskPanelTask = {
+  id: string;
+  title: string;
+  status: string;
+  time_label: string | null;
+  is_active: boolean;
+  is_top_essential: boolean;
+};
+
+export type TaskPanelScheduleBlock = {
+  id: string;
+  title: string;
+  start_label: string;
+  end_label: string;
+  task_id: string | null;
+  status: string | null;
+};
+
+export type TaskPanelSnapshot = {
+  run_status: TaskPanelRunStatus;
+  active_action: string | null;
+  headline: string | null;
+  tasks: TaskPanelTask[];
+  top_essentials: string[];
+  schedule: TaskPanelScheduleBlock[];
+  updated_at: string | null;
+  error_message: string | null;
+};
+
 export type StoredMessage = {
   id: string;
   session_id: string;

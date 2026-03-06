@@ -1,9 +1,10 @@
 import type {
   ChatModelAdapter,
   ChatModelRunResult,
-  ThreadMessage,
+  ThreadMessage
 } from "@assistant-ui/react-native";
-import type { EntryContext } from "../types/chat";
+import { normalizeTaskPanelSnapshot } from "./taskPanel";
+import type { EntryContext, TaskPanelSnapshot } from "../types/chat";
 
 type AdapterConfig = {
   backendUrl: string;
@@ -11,6 +12,7 @@ type AdapterConfig = {
   sessionId: string;
   timezone: string;
   getEntryContext: () => EntryContext | null;
+  onTaskPanelState?: (snapshot: TaskPanelSnapshot) => void;
 };
 
 type WsServerFrame =
@@ -28,6 +30,10 @@ type WsServerFrame =
       type: "assistant_done";
       message_id: string;
       text: string;
+    }
+  | {
+      type: "task_panel_state";
+      state: TaskPanelSnapshot | Record<string, unknown>;
     }
   | {
       type: "error";
@@ -214,6 +220,11 @@ export const createWebSocketChatAdapter = (
               yield toAssistantUpdate(cumulative);
             }
             return;
+          }
+
+          if (frame.type === "task_panel_state") {
+            config.onTaskPanelState?.(normalizeTaskPanelSnapshot(frame.state));
+            continue;
           }
 
           if (frame.type === "error") {

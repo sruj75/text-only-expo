@@ -1,8 +1,5 @@
 import {
   AssistantProvider,
-  ComposerInput,
-  ComposerRoot,
-  ComposerSend,
   MessageContent,
   MessageRoot,
   ThreadEmpty,
@@ -33,6 +30,8 @@ import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { ChatComposerBar } from "./src/components/ChatComposerBar";
+import { TaskPanelSheet } from "./src/components/TaskPanelSheet";
 import {
   bootstrapDevice,
   completeOnboarding,
@@ -49,6 +48,16 @@ import {
   parseTimeInput,
   type MotivationStyle
 } from "./src/lib/onboarding";
+import {
+  EMPTY_TASK_PANEL_SNAPSHOT,
+  getTaskPanelVisibilityForSnapshot,
+  shouldAutoCollapseTaskPanel
+} from "./src/lib/taskPanel";
+import {
+  refreshTaskPanel,
+  syncTaskStatus,
+  syncTopEssential
+} from "./src/lib/taskPanelActions";
 import { createWebSocketChatAdapter } from "./src/lib/wsAdapter";
 import type {
   BootstrapResponse,
@@ -56,6 +65,9 @@ import type {
   EntryIntent,
   ProfileContext,
   StoredMessage,
+  TaskPanelSnapshot,
+  TaskPanelTask,
+  TaskPanelVisibility,
   ThreadSummary
 } from "./src/types/chat";
 
@@ -361,9 +373,36 @@ const ChatPane = ({
   entryContext
 }: ChatPaneProps) => {
   const entryContextRef = useRef<EntryContext>(entryContext);
+  const collapseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoRefreshAttemptedRef = useRef<boolean>(false);
+  const [taskPanelSnapshot, setTaskPanelSnapshot] = useState<TaskPanelSnapshot>(
+    EMPTY_TASK_PANEL_SNAPSHOT
+  );
+  const [taskPanelVisibility, setTaskPanelVisibility] = useState<TaskPanelVisibility>("closed");
+  const [taskPanelMaxHeight, setTaskPanelMaxHeight] = useState<number>(0);
+  const [taskActionError, setTaskActionError] = useState<string | null>(null);
+  const [pendingTaskActionKey, setPendingTaskActionKey] = useState<string | null>(null);
+  const [refreshingTaskPanel, setRefreshingTaskPanel] = useState<boolean>(false);
+
   useEffect(() => {
     entryContextRef.current = entryContext;
   }, [entryContext]);
+
+  useEffect(() => {
+    return () => {
+      if (collapseTimeoutRef.current) {
+        clearTimeout(collapseTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleTaskPanelState = useCallback((snapshot: TaskPanelSnapshot) => {
+    setTaskActionError(null);
+    setTaskPanelSnapshot(snapshot);
+    setTaskPanelVisibility((currentVisibility) =>
+      getTaskPanelVisibilityForSnapshot(currentVisibility, snapshot)
+    );
+  }, []);
 
   const chatModel = useMemo(
     () =>
@@ -372,9 +411,10 @@ const ChatPane = ({
         deviceId,
         sessionId,
         timezone,
-        getEntryContext: () => entryContextRef.current
+        getEntryContext: () => entryContextRef.current,
+        onTaskPanelState: handleTaskPanelState
       }),
-    [backendUrl, deviceId, sessionId, timezone]
+    [backendUrl, deviceId, handleTaskPanelState, sessionId, timezone]
   );
 
   const runtime = useLocalRuntime(chatModel, {
@@ -383,9 +423,160 @@ const ChatPane = ({
     storagePrefix: `intentive:${sessionId}`
   });
 
+  useEffect(() => {
+    if (collapseTimeoutRef.current) {
+      clearTimeout(collapseTimeoutRef.current);
+      collapseTimeoutRef.current = null;
+    }
+
+    if (shouldAutoCollapseTaskPanel(taskPanelVisibility, taskPanelSnapshot.run_status)) {
+      collapseTimeoutRef.current = setTimeout(() => {
+        setTaskPanelVisibility("closed");
+      }, 1000);
+    }
+  }, [taskPanelSnapshot.run_status, taskPanelVisibility]);
+
+  const handleTogglePanel = useCallback(() => {
+    setTaskPanelVisibility((currentVisibility) => {
+      const nextVisibility =
+        currentVisibility === "expanded"
+          ? "closed"
+          : "expanded";
+      if (nextVisibility === "closed") {
+        autoRefreshAttemptedRef.current = false;
+      }
+      return nextVisibility;
+    });
+  }, []);
+
+  const handleRefreshTaskPanel = useCallback(async () => {
+    setRefreshingTaskPanel(true);
+    setTaskActionError(null);
+
+    try {
+      const nextSnapshot = await refreshTaskPanel({
+        baseUrl: backendUrl,
+        deviceId,
+        timezone,
+        sessionId
+      });
+
+      if (nextSnapshot) {
+        const hasWorkspaceData =
+          nextSnapshot.tasks.length > 0 || nextSnapshot.schedule.length > 0;
+        setTaskPanelSnapshot(nextSnapshot);
+        setTaskPanelVisibility((currentVisibility) =>
+          currentVisibility === "closed" ? "expanded" : currentVisibility
+        );
+        if (hasWorkspaceData) {
+          autoRefreshAttemptedRef.current = false;
+        }
+      }
+    } catch (taskError) {
+      setTaskActionError(
+        taskError instanceof Error ? taskError.message : "Could not refresh task workspace."
+      );
+    } finally {
+      setRefreshingTaskPanel(false);
+    }
+  }, [backendUrl, deviceId, sessionId, timezone]);
+
+  const handleThreadRootLayout = useCallback((height: number, composerHeight: number) => {
+    const safeHeight = Math.max(0, height - composerHeight - 20);
+    setTaskPanelMaxHeight(safeHeight);
+  }, []);
+
+  const handleTaskStatusToggle = useCallback(
+    async (task: TaskPanelTask) => {
+      const actionKey = `status:${task.id}`;
+      setPendingTaskActionKey(actionKey);
+      setTaskActionError(null);
+
+      try {
+        const nextSnapshot = await syncTaskStatus({
+          baseUrl: backendUrl,
+          deviceId,
+          timezone,
+          sessionId,
+          task
+        });
+
+        if (nextSnapshot) {
+          setTaskPanelSnapshot(nextSnapshot);
+        }
+      } catch (taskError) {
+        setTaskActionError(
+          taskError instanceof Error ? taskError.message : "Could not update task status."
+        );
+      } finally {
+        setPendingTaskActionKey((currentKey) => (currentKey === actionKey ? null : currentKey));
+      }
+    },
+    [backendUrl, deviceId, sessionId, timezone]
+  );
+
+  const handleTopEssentialToggle = useCallback(
+    async (task: TaskPanelTask) => {
+      const actionKey = `essential:${task.id}`;
+      setPendingTaskActionKey(actionKey);
+      setTaskActionError(null);
+
+      try {
+        const nextSnapshot = await syncTopEssential({
+          baseUrl: backendUrl,
+          deviceId,
+          timezone,
+          sessionId,
+          task,
+          tasks: taskPanelSnapshot.tasks
+        });
+
+        if (nextSnapshot) {
+          setTaskPanelSnapshot(nextSnapshot);
+        }
+      } catch (taskError) {
+        setTaskActionError(
+          taskError instanceof Error ? taskError.message : "Could not update top essential."
+        );
+      } finally {
+        setPendingTaskActionKey((currentKey) => (currentKey === actionKey ? null : currentKey));
+      }
+    },
+    [backendUrl, deviceId, sessionId, taskPanelSnapshot.tasks, timezone]
+  );
+
+  const [threadRootHeight, setThreadRootHeight] = useState<number>(0);
+  const [composerHeight, setComposerHeight] = useState<number>(0);
+
+  useEffect(() => {
+    handleThreadRootLayout(threadRootHeight, composerHeight);
+  }, [composerHeight, handleThreadRootLayout, threadRootHeight]);
+
+  useEffect(() => {
+    if (
+      taskPanelVisibility === "expanded" &&
+      taskPanelSnapshot.tasks.length === 0 &&
+      taskPanelSnapshot.schedule.length === 0 &&
+      !autoRefreshAttemptedRef.current &&
+      !refreshingTaskPanel
+    ) {
+      autoRefreshAttemptedRef.current = true;
+      void handleRefreshTaskPanel();
+    }
+  }, [
+    handleRefreshTaskPanel,
+    refreshingTaskPanel,
+    taskPanelSnapshot.schedule.length,
+    taskPanelSnapshot.tasks.length,
+    taskPanelVisibility
+  ]);
+
   return (
     <AssistantProvider runtime={runtime}>
-      <ThreadRoot style={styles.chatRoot}>
+      <ThreadRoot
+        style={styles.chatRoot}
+        onLayout={(event) => setThreadRootHeight(event.nativeEvent.layout.height)}
+      >
         <ThreadMessages
           style={styles.messagesList}
           contentContainerStyle={styles.messagesContent}
@@ -421,17 +612,23 @@ const ChatPane = ({
           </View>
         </ThreadEmpty>
 
-        <ComposerRoot style={styles.composer}>
-          <ComposerInput
-            style={styles.composerInput}
-            placeholder="Type what is on your mind..."
-            placeholderTextColor="#7f8a97"
-            multiline
-          />
-          <ComposerSend style={styles.sendButton}>
-            <Text style={styles.sendButtonText}>Send</Text>
-          </ComposerSend>
-        </ComposerRoot>
+        <TaskPanelSheet
+          snapshot={taskPanelSnapshot}
+          visibility={taskPanelVisibility}
+          maxHeight={taskPanelMaxHeight}
+          pendingActionKey={pendingTaskActionKey}
+          refreshing={refreshingTaskPanel}
+          actionError={taskActionError}
+          onRefresh={handleRefreshTaskPanel}
+          onToggleTaskStatus={handleTaskStatusToggle}
+          onToggleTopEssential={handleTopEssentialToggle}
+        />
+
+        <ChatComposerBar
+          panelVisibility={taskPanelVisibility}
+          onTogglePanel={handleTogglePanel}
+          onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}
+        />
       </ThreadRoot>
     </AssistantProvider>
   );

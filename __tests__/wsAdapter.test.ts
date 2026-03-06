@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createWebSocketChatAdapter } from "../src/lib/wsAdapter";
-import type { EntryContext } from "../src/types/chat";
+import type { EntryContext, TaskPanelSnapshot } from "../src/types/chat";
 
 class MockWebSocket {
   static instances: MockWebSocket[] = [];
@@ -59,13 +59,17 @@ const entryContext: EntryContext = {
   entry_mode: "reactive"
 };
 
-const runWith = async (userText: string) => {
+const runWith = async (
+  userText: string,
+  onTaskPanelState?: (snapshot: TaskPanelSnapshot) => void
+) => {
   const adapter = createWebSocketChatAdapter({
     backendUrl: "http://localhost:8000",
     deviceId: "device-1",
     sessionId: "session-1",
     timezone: "Asia/Kolkata",
-    getEntryContext: () => entryContext
+    getEntryContext: () => entryContext,
+    onTaskPanelState
   });
 
   const abortController = new AbortController();
@@ -201,5 +205,38 @@ describe("ws adapter", () => {
     ws.serverSend({ type: "error", code: "adk_error", detail: "boom" });
 
     await expect(updatesPromise).rejects.toThrow("boom");
+  });
+
+  it("forwards task panel snapshots without interrupting text streaming", async () => {
+    vi.stubGlobal("WebSocket", MockWebSocket as any);
+    MockWebSocket.instances = [];
+
+    const taskPanelStates: TaskPanelSnapshot[] = [];
+    const { ws, updatesPromise } = await runWith("plan my day", (snapshot) => {
+      taskPanelStates.push(snapshot);
+    });
+
+    ws.serverSend({
+      type: "task_panel_state",
+      state: {
+        run_status: "running",
+        active_action: "Capturing tasks",
+        headline: "Pulling your next tasks into view",
+        tasks: [{ id: "task-1", title: "Write landing page", status: "pending" }],
+        top_essentials: ["Write landing page"],
+        schedule: [],
+        updated_at: "2026-03-06T12:00:00Z",
+        error_message: null
+      }
+    });
+    ws.serverSend({ type: "assistant_done", message_id: "a1", text: "Planned." });
+
+    await updatesPromise;
+
+    expect(taskPanelStates).toHaveLength(1);
+    expect(taskPanelStates[0]).toMatchObject({
+      run_status: "running",
+      active_action: "Capturing tasks"
+    });
   });
 });
