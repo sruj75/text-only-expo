@@ -182,32 +182,6 @@ export const extractTaskPanelSnapshot = (value: unknown): TaskPanelSnapshot | nu
   return normalizeTaskPanelSnapshot(candidate);
 };
 
-export const getTaskPanelVisibilityForSnapshot = (
-  currentVisibility: TaskPanelVisibility,
-  nextSnapshot: TaskPanelSnapshot
-): TaskPanelVisibility => {
-  if (nextSnapshot.run_status === "running" && currentVisibility === "closed") {
-    return "preview";
-  }
-
-  return currentVisibility;
-};
-
-export const shouldAutoCollapseTaskPanel = (
-  visibility: TaskPanelVisibility,
-  runStatus: TaskPanelRunStatus
-): boolean => {
-  return visibility === "preview" && (runStatus === "complete" || runStatus === "error");
-};
-
 export const getTaskPanelHeightRatio = (visibility: TaskPanelVisibility): number => {
-  if (visibility === "expanded") {
-    return 1;
-  }
-
-  if (visibility === "preview") {
-    return 0.5;
-  }
-
-  return 0;
+  return visibility === "expanded" ? 1 : 0;
 };

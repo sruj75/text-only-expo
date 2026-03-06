@@ -2,14 +2,12 @@ import {
   AssistantProvider,
   MessageContent,
   MessageRoot,
-  ThreadEmpty,
   ThreadMessages,
   ThreadRoot,
   useLocalRuntime
 } from "@assistant-ui/react-native";
 import type { ThreadMessageLike } from "@assistant-ui/react-native";
 import {
-  FlatList,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -20,7 +18,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View
 } from "react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,13 +27,11 @@ import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { ChatComposerBar } from "./src/components/ChatComposerBar";
-import { TaskPanelSheet } from "./src/components/TaskPanelSheet";
+import { ChatFooterRail } from "./src/components/ChatFooterRail";
 import {
   bootstrapDevice,
   completeOnboarding,
   createThread,
-  fetchThreadMessages,
   registerPushToken
 } from "./src/lib/api";
 import { getOrCreateDeviceContext } from "./src/lib/device";
@@ -48,27 +43,15 @@ import {
   parseTimeInput,
   type MotivationStyle
 } from "./src/lib/onboarding";
-import {
-  EMPTY_TASK_PANEL_SNAPSHOT,
-  getTaskPanelVisibilityForSnapshot,
-  shouldAutoCollapseTaskPanel
-} from "./src/lib/taskPanel";
-import {
-  refreshTaskPanel,
-  syncTaskStatus,
-  syncTopEssential
-} from "./src/lib/taskPanelActions";
 import { createWebSocketChatAdapter } from "./src/lib/wsAdapter";
+import { useKeyboardOverlap } from "./src/hooks/useKeyboardOverlap";
+import { useTaskPanelController } from "./src/hooks/useTaskPanelController";
 import type {
   BootstrapResponse,
   EntryContext,
   EntryIntent,
   ProfileContext,
-  StoredMessage,
-  TaskPanelSnapshot,
-  TaskPanelTask,
-  TaskPanelVisibility,
-  ThreadSummary
+  StoredMessage
 } from "./src/types/chat";
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
@@ -372,37 +355,33 @@ const ChatPane = ({
   messages,
   entryContext
 }: ChatPaneProps) => {
+  const taskPanelTopGap = 16;
   const entryContextRef = useRef<EntryContext>(entryContext);
-  const collapseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoRefreshAttemptedRef = useRef<boolean>(false);
-  const [taskPanelSnapshot, setTaskPanelSnapshot] = useState<TaskPanelSnapshot>(
-    EMPTY_TASK_PANEL_SNAPSHOT
-  );
-  const [taskPanelVisibility, setTaskPanelVisibility] = useState<TaskPanelVisibility>("closed");
-  const [taskPanelMaxHeight, setTaskPanelMaxHeight] = useState<number>(0);
-  const [taskActionError, setTaskActionError] = useState<string | null>(null);
-  const [pendingTaskActionKey, setPendingTaskActionKey] = useState<string | null>(null);
-  const [refreshingTaskPanel, setRefreshingTaskPanel] = useState<boolean>(false);
+  const [chatShellHeight, setChatShellHeight] = useState<number>(0);
+  const [composerHeight, setComposerHeight] = useState<number>(54);
+  const { containerRef, handleContainerLayout, keyboardOffset } = useKeyboardOverlap();
+  const {
+    taskPanelSnapshot,
+    taskPanelVisibility,
+    refreshingTaskPanel,
+    taskActionError,
+    pendingTaskActionKey,
+    handleClosePanel,
+    handleRefreshTaskPanel,
+    handleTaskPanelState,
+    handleTaskStatusToggle,
+    handleTogglePanel,
+    handleTopEssentialToggle
+  } = useTaskPanelController({
+    backendUrl,
+    deviceId,
+    timezone,
+    sessionId
+  });
 
   useEffect(() => {
     entryContextRef.current = entryContext;
   }, [entryContext]);
-
-  useEffect(() => {
-    return () => {
-      if (collapseTimeoutRef.current) {
-        clearTimeout(collapseTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  const handleTaskPanelState = useCallback((snapshot: TaskPanelSnapshot) => {
-    setTaskActionError(null);
-    setTaskPanelSnapshot(snapshot);
-    setTaskPanelVisibility((currentVisibility) =>
-      getTaskPanelVisibilityForSnapshot(currentVisibility, snapshot)
-    );
-  }, []);
 
   const chatModel = useMemo(
     () =>
@@ -422,225 +401,83 @@ const ChatPane = ({
     storage: AsyncStorage,
     storagePrefix: `intentive:${sessionId}`
   });
-
-  useEffect(() => {
-    if (collapseTimeoutRef.current) {
-      clearTimeout(collapseTimeoutRef.current);
-      collapseTimeoutRef.current = null;
-    }
-
-    if (shouldAutoCollapseTaskPanel(taskPanelVisibility, taskPanelSnapshot.run_status)) {
-      collapseTimeoutRef.current = setTimeout(() => {
-        setTaskPanelVisibility("closed");
-      }, 1000);
-    }
-  }, [taskPanelSnapshot.run_status, taskPanelVisibility]);
-
-  const handleTogglePanel = useCallback(() => {
-    setTaskPanelVisibility((currentVisibility) => {
-      const nextVisibility =
-        currentVisibility === "expanded"
-          ? "closed"
-          : "expanded";
-      if (nextVisibility === "closed") {
-        autoRefreshAttemptedRef.current = false;
-      }
-      return nextVisibility;
-    });
-  }, []);
-
-  const handleRefreshTaskPanel = useCallback(async () => {
-    setRefreshingTaskPanel(true);
-    setTaskActionError(null);
-
-    try {
-      const nextSnapshot = await refreshTaskPanel({
-        baseUrl: backendUrl,
-        deviceId,
-        timezone,
-        sessionId
-      });
-
-      if (nextSnapshot) {
-        const hasWorkspaceData =
-          nextSnapshot.tasks.length > 0 || nextSnapshot.schedule.length > 0;
-        setTaskPanelSnapshot(nextSnapshot);
-        setTaskPanelVisibility((currentVisibility) =>
-          currentVisibility === "closed" ? "expanded" : currentVisibility
-        );
-        if (hasWorkspaceData) {
-          autoRefreshAttemptedRef.current = false;
-        }
-      }
-    } catch (taskError) {
-      setTaskActionError(
-        taskError instanceof Error ? taskError.message : "Could not refresh task workspace."
-      );
-    } finally {
-      setRefreshingTaskPanel(false);
-    }
-  }, [backendUrl, deviceId, sessionId, timezone]);
-
-  const handleThreadRootLayout = useCallback((height: number, composerHeight: number) => {
-    const safeHeight = Math.max(0, height - composerHeight - 20);
-    setTaskPanelMaxHeight(safeHeight);
-  }, []);
-
-  const handleTaskStatusToggle = useCallback(
-    async (task: TaskPanelTask) => {
-      const actionKey = `status:${task.id}`;
-      setPendingTaskActionKey(actionKey);
-      setTaskActionError(null);
-
-      try {
-        const nextSnapshot = await syncTaskStatus({
-          baseUrl: backendUrl,
-          deviceId,
-          timezone,
-          sessionId,
-          task
-        });
-
-        if (nextSnapshot) {
-          setTaskPanelSnapshot(nextSnapshot);
-        }
-      } catch (taskError) {
-        setTaskActionError(
-          taskError instanceof Error ? taskError.message : "Could not update task status."
-        );
-      } finally {
-        setPendingTaskActionKey((currentKey) => (currentKey === actionKey ? null : currentKey));
-      }
-    },
-    [backendUrl, deviceId, sessionId, timezone]
+  const taskPanelMaxHeight = Math.max(
+    0,
+    chatShellHeight - keyboardOffset - composerHeight - 12 - taskPanelTopGap
   );
-
-  const handleTopEssentialToggle = useCallback(
-    async (task: TaskPanelTask) => {
-      const actionKey = `essential:${task.id}`;
-      setPendingTaskActionKey(actionKey);
-      setTaskActionError(null);
-
-      try {
-        const nextSnapshot = await syncTopEssential({
-          baseUrl: backendUrl,
-          deviceId,
-          timezone,
-          sessionId,
-          task,
-          tasks: taskPanelSnapshot.tasks
-        });
-
-        if (nextSnapshot) {
-          setTaskPanelSnapshot(nextSnapshot);
-        }
-      } catch (taskError) {
-        setTaskActionError(
-          taskError instanceof Error ? taskError.message : "Could not update top essential."
-        );
-      } finally {
-        setPendingTaskActionKey((currentKey) => (currentKey === actionKey ? null : currentKey));
-      }
-    },
-    [backendUrl, deviceId, sessionId, taskPanelSnapshot.tasks, timezone]
-  );
-
-  const [threadRootHeight, setThreadRootHeight] = useState<number>(0);
-  const [composerHeight, setComposerHeight] = useState<number>(0);
-
-  useEffect(() => {
-    handleThreadRootLayout(threadRootHeight, composerHeight);
-  }, [composerHeight, handleThreadRootLayout, threadRootHeight]);
-
-  useEffect(() => {
-    if (
-      taskPanelVisibility === "expanded" &&
-      taskPanelSnapshot.tasks.length === 0 &&
-      taskPanelSnapshot.schedule.length === 0 &&
-      !autoRefreshAttemptedRef.current &&
-      !refreshingTaskPanel
-    ) {
-      autoRefreshAttemptedRef.current = true;
-      void handleRefreshTaskPanel();
-    }
-  }, [
-    handleRefreshTaskPanel,
-    refreshingTaskPanel,
-    taskPanelSnapshot.schedule.length,
-    taskPanelSnapshot.tasks.length,
-    taskPanelVisibility
-  ]);
 
   return (
     <AssistantProvider runtime={runtime}>
-      <ThreadRoot
-        style={styles.chatRoot}
-        onLayout={(event) => setThreadRootHeight(event.nativeEvent.layout.height)}
+      <View
+        ref={containerRef}
+        style={styles.chatRootContainer}
+        onLayout={(event) => {
+          handleContainerLayout(event);
+          const nextHeight = Math.round(event.nativeEvent.layout.height);
+          setChatShellHeight((currentHeight) =>
+            currentHeight === nextHeight ? currentHeight : nextHeight
+          );
+        }}
       >
-        <ThreadMessages
-          style={styles.messagesList}
-          contentContainerStyle={styles.messagesContent}
-          renderMessage={({ message }) => (
-            <MessageRoot
-              style={[
-                styles.messageBubble,
-                message.role === "user" ? styles.userBubble : styles.assistantBubble
-              ]}
-            >
-              <MessageContent
-                renderText={({ part }) => (
-                  <Text
-                    style={[
-                      styles.messageText,
-                      message.role === "user" ? styles.userText : styles.assistantText
-                    ]}
-                  >
-                    {part.text}
-                  </Text>
-                )}
-              />
-            </MessageRoot>
-          )}
-        />
+        <ThreadRoot style={styles.chatRoot}>
+          <ThreadMessages
+            style={styles.messagesList}
+            contentContainerStyle={[
+              styles.messagesContent,
+              { paddingBottom: composerHeight + 12 }
+            ]}
+            renderMessage={({ message }) => (
+              <MessageRoot
+                style={[
+                  styles.messageBubble,
+                  message.role === "user" ? styles.userBubble : styles.assistantBubble
+                ]}
+              >
+                <MessageContent
+                  renderText={({ part }) => (
+                    <Text
+                      style={[
+                        styles.messageText,
+                        message.role === "user" ? styles.userText : styles.assistantText
+                      ]}
+                    >
+                      {part.text}
+                    </Text>
+                  )}
+                />
+              </MessageRoot>
+            )}
+          />
 
-        <ThreadEmpty>
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>Start the conversation</Text>
-            <Text style={styles.emptySubtitle}>
-              This thread is ready. Send a message to begin.
-            </Text>
-          </View>
-        </ThreadEmpty>
-
-        <TaskPanelSheet
-          snapshot={taskPanelSnapshot}
-          visibility={taskPanelVisibility}
-          maxHeight={taskPanelMaxHeight}
-          pendingActionKey={pendingTaskActionKey}
-          refreshing={refreshingTaskPanel}
-          actionError={taskActionError}
-          onRefresh={handleRefreshTaskPanel}
-          onToggleTaskStatus={handleTaskStatusToggle}
-          onToggleTopEssential={handleTopEssentialToggle}
-        />
-
-        <ChatComposerBar
-          panelVisibility={taskPanelVisibility}
-          onTogglePanel={handleTogglePanel}
-          onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}
-        />
-      </ThreadRoot>
+          <ChatFooterRail
+            actionError={taskActionError}
+            keyboardOffset={keyboardOffset}
+            panelMaxHeight={taskPanelMaxHeight}
+            pendingActionKey={pendingTaskActionKey}
+            refreshing={refreshingTaskPanel}
+            snapshot={taskPanelSnapshot}
+            visibility={taskPanelVisibility}
+            onComposerLayout={(event) => {
+              const nextHeight = Math.round(event.nativeEvent.layout.height);
+              setComposerHeight((currentHeight) =>
+                currentHeight === nextHeight ? currentHeight : nextHeight
+              );
+            }}
+            onClosePanel={handleClosePanel}
+            onRefreshPanel={handleRefreshTaskPanel}
+            onTogglePanel={handleTogglePanel}
+            onToggleTaskStatus={handleTaskStatusToggle}
+            onToggleTopEssential={handleTopEssentialToggle}
+          />
+        </ThreadRoot>
+      </View>
     </AssistantProvider>
   );
 };
 
 export default function App() {
-  const { width } = useWindowDimensions();
-  const compact = width < 880;
-
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [timezone, setTimezone] = useState<string>("UTC");
-  const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<Record<string, StoredMessage[]>>({});
   const [loading, setLoading] = useState<boolean>(true);
@@ -656,8 +493,6 @@ export default function App() {
   const [onboardingMotivationStyle, setOnboardingMotivationStyle] =
     useState<MotivationStyle>("supportive");
   const [onboardingSaving, setOnboardingSaving] = useState<boolean>(false);
-  const [mobileThreadOpen, setMobileThreadOpen] = useState<boolean>(false);
-  const swipeStartX = useRef<number | null>(null);
 
   const loadBootstrap = useCallback(
     async (currentDeviceId: string, currentTimezone: string, intent: EntryIntent | null) => {
@@ -669,11 +504,29 @@ export default function App() {
       };
 
       const response: BootstrapResponse = await bootstrapDevice(BACKEND_URL, payload);
-      setThreads(response.threads);
-      setActiveThreadId(response.session_id);
+      const resolvedSessionId = response.session_id;
+
+      if (!resolvedSessionId) {
+        const createdThread = await createThread(BACKEND_URL, {
+          device_id: currentDeviceId,
+          timezone: currentTimezone
+        });
+
+        setActiveThreadId(createdThread.session_id);
+        setThreadMessages((prev) => ({
+          ...prev,
+          [createdThread.session_id]: []
+        }));
+        setNeedsOnboarding(Boolean(response.needs_onboarding));
+        setProfileContext(response.profile_context || DEFAULT_PROFILE_CONTEXT);
+        setEntryContext(intent?.entry_context || MANUAL_CONTEXT);
+        return;
+      }
+
+      setActiveThreadId(resolvedSessionId);
       setThreadMessages((prev) => ({
         ...prev,
-        [response.session_id]: response.messages
+        [resolvedSessionId]: response.messages
       }));
       setNeedsOnboarding(Boolean(response.needs_onboarding));
       setProfileContext(response.profile_context || DEFAULT_PROFILE_CONTEXT);
@@ -880,76 +733,6 @@ export default function App() {
     timezone
   ]);
 
-  const onSelectThread = useCallback(
-    async (sessionId: string) => {
-      if (!deviceId) return;
-      setError(null);
-      try {
-        if (!threadMessages[sessionId]) {
-          const messages = await fetchThreadMessages(BACKEND_URL, sessionId, deviceId);
-          setThreadMessages((prev) => ({
-            ...prev,
-            [sessionId]: messages
-          }));
-        }
-
-        setActiveThreadId(sessionId);
-        setEntryContext(MANUAL_CONTEXT);
-        if (compact) {
-          setMobileThreadOpen(false);
-        }
-      } catch (threadError) {
-        setError(
-          threadError instanceof Error ? threadError.message : "Failed to load thread"
-        );
-      }
-    },
-    [compact, deviceId, threadMessages]
-  );
-
-  const onCreateThread = useCallback(async () => {
-    if (!deviceId) return;
-    setError(null);
-    try {
-      const created = await createThread(BACKEND_URL, {
-        device_id: deviceId,
-        timezone
-      });
-      setThreads((prev) => [created, ...prev]);
-      setThreadMessages((prev) => ({ ...prev, [created.session_id]: [] }));
-      setActiveThreadId(created.session_id);
-      setEntryContext(MANUAL_CONTEXT);
-      if (compact) {
-        setMobileThreadOpen(false);
-      }
-    } catch (createError) {
-      setError(
-        createError instanceof Error ? createError.message : "Failed to create thread"
-      );
-    }
-  }, [compact, deviceId, timezone]);
-
-  const onSwipeStart = useCallback((x: number) => {
-    swipeStartX.current = x;
-  }, []);
-
-  const onSwipeEnd = useCallback(
-    (x: number) => {
-      if (!compact) return;
-      const startX = swipeStartX.current;
-      swipeStartX.current = null;
-      if (startX === null) return;
-
-      const delta = x - startX;
-      if (delta > 56) {
-        setMobileThreadOpen(true);
-      } else if (delta < -56) {
-        setMobileThreadOpen(false);
-      }
-    },
-    [compact]
-  );
-
   const activeMessages =
     (activeThreadId && threadMessages[activeThreadId]) || [];
 
@@ -992,130 +775,32 @@ export default function App() {
     );
   }
 
-  const showThreads = !compact;
-  const showChat = true;
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f3f5f7" />
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-      <View
-        style={styles.content}
-        onTouchStart={(event) => onSwipeStart(event.nativeEvent.pageX)}
-        onTouchEnd={(event) => onSwipeEnd(event.nativeEvent.pageX)}
-      >
-        {showThreads ? (
-          <View style={styles.threadPane}>
-            <View style={styles.threadPaneHeader}>
-              <Text style={styles.threadPaneTitle}>Threads</Text>
-              <Pressable onPress={() => void onCreateThread()} style={styles.newThreadButton}>
-                <Text style={styles.newThreadButtonText}>+ New</Text>
-              </Pressable>
+      <View style={styles.content}>
+        <View style={styles.chatPane}>
+          {!deviceId || !activeThreadId ? (
+            <View style={styles.centeredState}>
+              <Text style={styles.centeredTitle}>Preparing your chat</Text>
+              <Text style={styles.centeredSubtitle}>
+                Getting the conversation ready for you.
+              </Text>
             </View>
-
-            <FlatList
-              data={threads}
-              keyExtractor={(item) => item.session_id}
-              renderItem={({ item }) => (
-                <Pressable
-                  onPress={() => void onSelectThread(item.session_id)}
-                  style={[
-                    styles.threadItem,
-                    activeThreadId === item.session_id && styles.threadItemActive
-                  ]}
-                >
-                  <Text style={styles.threadTitle}>{item.title}</Text>
-                  <Text style={styles.threadDate}>{item.date}</Text>
-                </Pressable>
-              )}
-              ListEmptyComponent={
-                <View style={styles.emptyThreads}>
-                  <Text style={styles.emptyThreadsText}>No threads yet</Text>
-                </View>
-              }
+          ) : (
+            <ChatPane
+              key={activeThreadId}
+              backendUrl={BACKEND_URL}
+              deviceId={deviceId}
+              timezone={timezone}
+              sessionId={activeThreadId}
+              messages={activeMessages}
+              entryContext={entryContext}
             />
-          </View>
-        ) : null}
-
-        {showChat ? (
-          <View style={styles.chatPane}>
-            {!deviceId || !activeThreadId ? (
-              <View style={styles.centeredState}>
-                <Text style={styles.centeredTitle}>No active thread</Text>
-                <Text style={styles.centeredSubtitle}>
-                  Create a thread or pick one from the list.
-                </Text>
-              </View>
-            ) : (
-              <ChatPane
-                key={activeThreadId}
-                backendUrl={BACKEND_URL}
-                deviceId={deviceId}
-                timezone={timezone}
-                sessionId={activeThreadId}
-                messages={activeMessages}
-                entryContext={entryContext}
-              />
-            )}
-
-            {compact ? (
-              <Pressable
-                style={styles.mobileMenuButton}
-                onPress={() => setMobileThreadOpen(true)}
-              >
-                <Text style={styles.mobileMenuButtonText}>☰</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        ) : null}
-
-        {compact && mobileThreadOpen ? (
-          <View
-            style={styles.mobileDrawerOverlay}
-            onTouchStart={(event) => onSwipeStart(event.nativeEvent.pageX)}
-            onTouchEnd={(event) => onSwipeEnd(event.nativeEvent.pageX)}
-          >
-            <View style={styles.mobileDrawerPanel}>
-              <View style={[styles.threadPane, styles.mobileThreadPane]}>
-                <View style={styles.threadPaneHeader}>
-                  <Text style={styles.threadPaneTitle}>Threads</Text>
-                  <Pressable onPress={() => void onCreateThread()} style={styles.newThreadButton}>
-                    <Text style={styles.newThreadButtonText}>+ New</Text>
-                  </Pressable>
-                </View>
-
-                <FlatList
-                  data={threads}
-                  keyExtractor={(item) => item.session_id}
-                  renderItem={({ item }) => (
-                    <Pressable
-                      onPress={() => void onSelectThread(item.session_id)}
-                      style={[
-                        styles.threadItem,
-                        activeThreadId === item.session_id && styles.threadItemActive
-                      ]}
-                    >
-                      <Text style={styles.threadTitle}>{item.title}</Text>
-                      <Text style={styles.threadDate}>{item.date}</Text>
-                    </Pressable>
-                  )}
-                  ListEmptyComponent={
-                    <View style={styles.emptyThreads}>
-                      <Text style={styles.emptyThreadsText}>No threads yet</Text>
-                    </View>
-                  }
-                />
-              </View>
-            </View>
-
-            <Pressable
-              style={styles.mobileDrawerBackdrop}
-              onPress={() => setMobileThreadOpen(false)}
-            />
-          </View>
-        ) : null}
+          )}
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -1200,71 +885,7 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    flexDirection: "row",
-    gap: 12,
-    padding: 12,
-    position: "relative"
-  },
-  threadPane: {
-    width: 280,
-    maxWidth: "100%",
-    backgroundColor: "#ffffff",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#d8e0ea",
     padding: 12
-  },
-  threadPaneHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8
-  },
-  threadPaneTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#0f1720"
-  },
-  newThreadButton: {
-    backgroundColor: "#0f1720",
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 8
-  },
-  newThreadButtonText: {
-    color: "#ffffff",
-    fontWeight: "700",
-    fontSize: 12
-  },
-  threadItem: {
-    borderWidth: 1,
-    borderColor: "#d8e0ea",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    marginVertical: 4,
-    backgroundColor: "#ffffff"
-  },
-  threadItemActive: {
-    borderColor: "#0f1720",
-    backgroundColor: "#eef2f6"
-  },
-  threadTitle: {
-    color: "#0f1720",
-    fontSize: 14,
-    fontWeight: "600"
-  },
-  threadDate: {
-    marginTop: 3,
-    color: "#6d7784",
-    fontSize: 12
-  },
-  emptyThreads: {
-    paddingTop: 20,
-    alignItems: "center"
-  },
-  emptyThreadsText: {
-    color: "#6d7784"
   },
   chatPane: {
     flex: 1,
@@ -1274,47 +895,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#d8e0ea",
     overflow: "hidden"
-  },
-  mobileMenuButton: {
-    position: "absolute",
-    top: 14,
-    left: 14,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#0f1720",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 3
-  },
-  mobileMenuButtonText: {
-    color: "#ffffff",
-    fontSize: 18,
-    lineHeight: 20,
-    fontWeight: "700"
-  },
-  mobileDrawerOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    flexDirection: "row",
-    zIndex: 20
-  },
-  mobileDrawerPanel: {
-    width: "82%",
-    maxWidth: 320,
-    backgroundColor: "#ffffff",
-    borderRightWidth: 1,
-    borderRightColor: "#d8e0ea"
-  },
-  mobileThreadPane: {
-    flex: 1,
-    width: "100%",
-    maxWidth: "100%",
-    borderWidth: 0,
-    borderRadius: 0
-  },
-  mobileDrawerBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(15, 23, 32, 0.36)"
   },
   onboardingPane: {
     flexGrow: 1,
@@ -1425,15 +1005,21 @@ const styles = StyleSheet.create({
     color: "#6d7784",
     textAlign: "center"
   },
+  chatRootContainer: {
+    flex: 1
+  },
   chatRoot: {
-    flex: 1,
-    padding: 12
+    flex: 1
   },
   messagesList: {
     flex: 1
   },
   messagesContent: {
-    paddingBottom: 20,
+    flexGrow: 1,
+    justifyContent: "flex-end",
+    paddingTop: 12,
+    paddingHorizontal: 12,
+    paddingBottom: 96,
     gap: 8
   },
   messageBubble: {
@@ -1459,45 +1045,5 @@ const styles = StyleSheet.create({
   },
   assistantText: {
     color: "#0f1720"
-  },
-  emptyState: {
-    alignItems: "center",
-    marginBottom: 12
-  },
-  emptyTitle: {
-    color: "#0f1720",
-    fontWeight: "700"
-  },
-  emptySubtitle: {
-    marginTop: 4,
-    color: "#6d7784"
-  },
-  composer: {
-    marginTop: 10,
-    flexDirection: "row",
-    gap: 8,
-    alignItems: "flex-end"
-  },
-  composerInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#c9d2dd",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    maxHeight: 120,
-    color: "#0f1720",
-    backgroundColor: "#ffffff"
-  },
-  sendButton: {
-    height: 42,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    justifyContent: "center",
-    backgroundColor: "#0f1720"
-  },
-  sendButtonText: {
-    color: "#ffffff",
-    fontWeight: "700"
   }
 });

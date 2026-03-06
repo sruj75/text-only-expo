@@ -31,7 +31,7 @@ export type ProfileContext = {
 
 export type ChatRole = "user" | "assistant" | "system" | "event";
 
-export type TaskPanelVisibility = "closed" | "preview" | "expanded";
+export type TaskPanelVisibility = "closed" | "expanded";
 export type TaskPanelRunStatus = "idle" | "running" | "complete" | "error";
 
 export type TaskPanelTask = {

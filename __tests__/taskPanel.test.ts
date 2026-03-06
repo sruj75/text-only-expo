@@ -3,11 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   EMPTY_TASK_PANEL_SNAPSHOT,
   extractTaskPanelSnapshot,
-  getTaskPanelVisibilityForSnapshot,
+  getTaskPanelHeightRatio,
   normalizeTaskPanelSnapshot,
-  shouldAutoCollapseTaskPanel
 } from "../src/lib/taskPanel";
-import type { TaskPanelSnapshot } from "../src/types/chat";
 
 describe("task panel helpers", () => {
   it("normalizes missing values into safe defaults", () => {
@@ -49,21 +47,8 @@ describe("task panel helpers", () => {
     expect(snapshot?.tasks[0].title).toBe("Review schedule");
   });
 
-  it("opens preview when task work starts from a closed state", () => {
-    const snapshot: TaskPanelSnapshot = {
-      ...EMPTY_TASK_PANEL_SNAPSHOT,
-      run_status: "running"
-    };
-
-    expect(getTaskPanelVisibilityForSnapshot("closed", snapshot)).toBe("preview");
-  });
-
-  it("keeps expanded panels open when work completes", () => {
-    expect(shouldAutoCollapseTaskPanel("expanded", "complete")).toBe(false);
-  });
-
-  it("marks preview panels for auto-collapse after completion", () => {
-    expect(shouldAutoCollapseTaskPanel("preview", "complete")).toBe(true);
-    expect(shouldAutoCollapseTaskPanel("preview", "error")).toBe(true);
+  it("returns full height only for expanded panels", () => {
+    expect(getTaskPanelHeightRatio("closed")).toBe(0);
+    expect(getTaskPanelHeightRatio("expanded")).toBe(1);
   });
 });

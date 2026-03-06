@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import {
   Animated,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -23,6 +24,7 @@ type TaskPanelSheetProps = {
   pendingActionKey: string | null;
   refreshing: boolean;
   actionError: string | null;
+  onClose: () => void;
   onRefresh: () => void;
   onToggleTaskStatus: (task: TaskPanelTask) => void;
   onToggleTopEssential: (task: TaskPanelTask) => void;
@@ -58,11 +60,25 @@ export const TaskPanelSheet = ({
   pendingActionKey,
   refreshing,
   actionError,
+  onClose,
   onRefresh,
   onToggleTaskStatus,
   onToggleTopEssential
 }: TaskPanelSheetProps) => {
   const animatedHeight = useRef(new Animated.Value(0)).current;
+  const handlePanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          gestureState.dy > 6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
+        onPanResponderRelease: (_, gestureState) => {
+          if (gestureState.dy > 48) {
+            onClose();
+          }
+        }
+      }),
+    [onClose]
+  );
 
   const targetHeight = useMemo(() => {
     return Math.max(0, maxHeight * getTaskPanelHeightRatio(visibility));
@@ -99,8 +115,10 @@ export const TaskPanelSheet = ({
         }
       ]}
     >
-      <View style={styles.panel}>
-        <View style={styles.handle} />
+      <View style={styles.panel} {...handlePanResponder.panHandlers}>
+        <View style={styles.handleArea}>
+          <View style={styles.handle} />
+        </View>
 
         <View style={styles.headerRow}>
           <View style={styles.headerTextGroup}>
@@ -281,13 +299,16 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 16
   },
+  handleArea: {
+    alignItems: "center",
+    marginBottom: 10
+  },
   handle: {
     width: 54,
     height: 6,
     borderRadius: 999,
     backgroundColor: "#c9d2dd",
-    alignSelf: "center",
-    marginBottom: 12
+    alignSelf: "center"
   },
   headerRow: {
     flexDirection: "row",
