@@ -13,8 +13,12 @@ import {
 import type { ThreadMessageLike } from "@assistant-ui/react-native";
 import {
   FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -37,6 +41,14 @@ import {
   registerPushToken
 } from "./src/lib/api";
 import { getOrCreateDeviceContext } from "./src/lib/device";
+import {
+  buildHealthAnchors,
+  buildPlaybookSummary,
+  formatTimeForDisplay,
+  parsePlaybookSummary,
+  parseTimeInput,
+  type MotivationStyle
+} from "./src/lib/onboarding";
 import { createWebSocketChatAdapter } from "./src/lib/wsAdapter";
 import type {
   BootstrapResponse,
@@ -65,8 +77,6 @@ const DEFAULT_PROFILE_CONTEXT: ProfileContext = {
   health_anchors: [],
   onboarding_status: "pending"
 };
-
-const HHMM_REGEX = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
 const asString = (value: unknown) => {
   if (typeof value === "string" && value.trim().length > 0) {
@@ -128,20 +138,6 @@ const parsePlaybookNotes = (profileContext: ProfileContext | undefined): string 
   return typeof notes === "string" ? notes : "";
 };
 
-const parseAnchorsText = (profileContext: ProfileContext | undefined): string => {
-  if (!profileContext) {
-    return "";
-  }
-  return profileContext.health_anchors.join("\n");
-};
-
-const normalizeAnchorsText = (text: string): string[] => {
-  return text
-    .split("\n")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-};
-
 type ChatPaneProps = {
   backendUrl: string;
   deviceId: string;
@@ -149,6 +145,211 @@ type ChatPaneProps = {
   sessionId: string;
   messages: StoredMessage[];
   entryContext: EntryContext;
+};
+
+type OnboardingScreenProps = {
+  error: string | null;
+  onboardingWakeTime: string;
+  onboardingBedtime: string;
+  onboardingStruggles: string;
+  onboardingGoals: string;
+  onboardingMotivationStyle: MotivationStyle;
+  onboardingFormValid: boolean;
+  onboardingSaving: boolean;
+  onboardingStatus: string;
+  setOnboardingWakeTime: (value: string) => void;
+  setOnboardingBedtime: (value: string) => void;
+  setOnboardingStruggles: (value: string) => void;
+  setOnboardingGoals: (value: string) => void;
+  setOnboardingMotivationStyle: (value: MotivationStyle) => void;
+  onCompleteOnboarding: () => void;
+};
+
+const OnboardingScreen = ({
+  error,
+  onboardingWakeTime,
+  onboardingBedtime,
+  onboardingStruggles,
+  onboardingGoals,
+  onboardingMotivationStyle,
+  onboardingFormValid,
+  onboardingSaving,
+  onboardingStatus,
+  setOnboardingWakeTime,
+  setOnboardingBedtime,
+  setOnboardingStruggles,
+  setOnboardingGoals,
+  setOnboardingMotivationStyle,
+  onCompleteOnboarding
+}: OnboardingScreenProps) => {
+  return (
+    <SafeAreaView style={styles.standaloneScreen}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f3f5f7" />
+
+      <View style={styles.authShell}>
+        <View style={styles.authHeader}>
+          <Text style={styles.authEyebrow}>Intentive setup</Text>
+          <Text style={styles.authTitle}>Quick setup before chat</Text>
+          <Text style={styles.authSubtitle}>
+            Finish this once, then you land in the main chat and thread screen.
+          </Text>
+        </View>
+
+        {error ? <Text style={styles.authError}>{error}</Text> : null}
+
+        <View style={styles.authCard}>
+          <KeyboardAvoidingView
+            style={styles.onboardingKeyboardArea}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          >
+            <ScrollView
+              contentContainerStyle={styles.onboardingPane}
+              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <Pressable onPress={Keyboard.dismiss} style={styles.onboardingDismissArea}>
+                <View style={styles.onboardingField}>
+                  <Text style={styles.onboardingLabel}>When do you usually wake up?</Text>
+                  <TextInput
+                    value={onboardingWakeTime}
+                    onChangeText={setOnboardingWakeTime}
+                    placeholder="7:30 AM"
+                    placeholderTextColor="#7f8a97"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="done"
+                    onSubmitEditing={Keyboard.dismiss}
+                    style={styles.onboardingInput}
+                  />
+                  <Text style={styles.onboardingHelperText}>
+                    Use a time with AM or PM, like 7:30 AM.
+                  </Text>
+                </View>
+
+                <View style={styles.onboardingField}>
+                  <Text style={styles.onboardingLabel}>When do you usually go to bed?</Text>
+                  <TextInput
+                    value={onboardingBedtime}
+                    onChangeText={setOnboardingBedtime}
+                    placeholder="11:30 PM"
+                    placeholderTextColor="#7f8a97"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="done"
+                    onSubmitEditing={Keyboard.dismiss}
+                    style={styles.onboardingInput}
+                  />
+                  <Text style={styles.onboardingHelperText}>Example: 11:30 PM.</Text>
+                </View>
+
+                <View style={styles.onboardingField}>
+                  <Text style={styles.onboardingLabel}>
+                    What struggles do you face most as a person with ADHD?
+                  </Text>
+                  <TextInput
+                    value={onboardingStruggles}
+                    onChangeText={setOnboardingStruggles}
+                    placeholder="Example: I freeze when I have too many tasks and avoid starting."
+                    placeholderTextColor="#7f8a97"
+                    multiline
+                    style={[styles.onboardingInput, styles.onboardingMultiline]}
+                  />
+                </View>
+
+                <View style={styles.onboardingField}>
+                  <Text style={styles.onboardingLabel}>What goals are you working toward right now?</Text>
+                  <TextInput
+                    value={onboardingGoals}
+                    onChangeText={setOnboardingGoals}
+                    placeholder="Example: finish my most important work earlier and stay consistent."
+                    placeholderTextColor="#7f8a97"
+                    multiline
+                    style={[styles.onboardingInput, styles.onboardingMultiline]}
+                  />
+                </View>
+
+                <View style={styles.onboardingField}>
+                  <Text style={styles.onboardingLabel}>
+                    What personality works best for you?
+                  </Text>
+                  <View style={styles.motivationOptions}>
+                    {[
+                      {
+                        value: "straightforward" as MotivationStyle,
+                        label: "Straightforward"
+                      },
+                      {
+                        value: "supportive" as MotivationStyle,
+                        label: "Supportive"
+                      },
+                      {
+                        value: "balanced" as MotivationStyle,
+                        label: "Balanced"
+                      },
+                      {
+                        value: "motivation" as MotivationStyle,
+                        label: "Motivation"
+                      },
+                      {
+                        value: "zen" as MotivationStyle,
+                        label: "Zen"
+                      }
+                    ].map((option) => (
+                      <Pressable
+                        key={option.value}
+                        onPress={() => {
+                          Keyboard.dismiss();
+                          setOnboardingMotivationStyle(option.value);
+                        }}
+                        style={[
+                          styles.motivationOption,
+                          onboardingMotivationStyle === option.value &&
+                            styles.motivationOptionActive
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.motivationOptionText,
+                            onboardingMotivationStyle === option.value &&
+                              styles.motivationOptionTextActive
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+
+                <Pressable
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    onCompleteOnboarding();
+                  }}
+                  disabled={!onboardingFormValid || onboardingSaving}
+                  style={[
+                    styles.onboardingButton,
+                    (!onboardingFormValid || onboardingSaving) && styles.onboardingButtonDisabled
+                  ]}
+                >
+                  <Text style={styles.onboardingButtonText}>
+                    {onboardingSaving ? "Saving..." : "Save and continue"}
+                  </Text>
+                </Pressable>
+
+                <Text style={styles.onboardingHint}>
+                  {onboardingStatus === "completed"
+                    ? "Profile is already completed."
+                    : "Add your sleep times, struggles, goals, and preferred motivation style to continue."}
+                </Text>
+              </Pressable>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
 };
 
 const ChatPane = ({
@@ -253,10 +454,13 @@ export default function App() {
   const [profileContext, setProfileContext] = useState<ProfileContext>(DEFAULT_PROFILE_CONTEXT);
   const [onboardingWakeTime, setOnboardingWakeTime] = useState<string>("");
   const [onboardingBedtime, setOnboardingBedtime] = useState<string>("");
-  const [onboardingPlaybook, setOnboardingPlaybook] = useState<string>("");
-  const [onboardingAnchorsText, setOnboardingAnchorsText] = useState<string>("");
+  const [onboardingStruggles, setOnboardingStruggles] = useState<string>("");
+  const [onboardingGoals, setOnboardingGoals] = useState<string>("");
+  const [onboardingMotivationStyle, setOnboardingMotivationStyle] =
+    useState<MotivationStyle>("supportive");
   const [onboardingSaving, setOnboardingSaving] = useState<boolean>(false);
-  const [mobileTab, setMobileTab] = useState<"threads" | "chat">("chat");
+  const [mobileThreadOpen, setMobileThreadOpen] = useState<boolean>(false);
+  const swipeStartX = useRef<number | null>(null);
 
   const loadBootstrap = useCallback(
     async (currentDeviceId: string, currentTimezone: string, intent: EntryIntent | null) => {
@@ -277,21 +481,19 @@ export default function App() {
       setNeedsOnboarding(Boolean(response.needs_onboarding));
       setProfileContext(response.profile_context || DEFAULT_PROFILE_CONTEXT);
       if (response.needs_onboarding) {
-        const wake = response.profile_context?.wake_time || "";
-        const bed = response.profile_context?.bedtime || "";
+        const wake = formatTimeForDisplay(response.profile_context?.wake_time);
+        const bed = formatTimeForDisplay(response.profile_context?.bedtime);
         const notes = parsePlaybookNotes(response.profile_context);
-        const anchors = parseAnchorsText(response.profile_context);
+        const playbookSummary = parsePlaybookSummary(notes);
         setOnboardingWakeTime((prev) => prev || wake);
         setOnboardingBedtime((prev) => prev || bed);
-        setOnboardingPlaybook((prev) => prev || notes);
-        setOnboardingAnchorsText((prev) => prev || anchors);
+      setOnboardingStruggles((prev) => prev || playbookSummary.struggles || "");
+      setOnboardingGoals((prev) => prev || playbookSummary.goals || "");
+      setOnboardingMotivationStyle((prev) => playbookSummary.motivationStyle || prev);
       }
       setEntryContext(intent?.entry_context || MANUAL_CONTEXT);
-      if (compact) {
-        setMobileTab("chat");
-      }
     },
-    [compact]
+    []
   );
 
   const syncPushToken = useCallback(async (currentDeviceId: string, currentTimezone: string) => {
@@ -414,31 +616,47 @@ export default function App() {
       });
   }, [deviceId, loadBootstrap, pendingEntryIntent, timezone]);
 
-  const onboardingAnchors = useMemo(
-    () => normalizeAnchorsText(onboardingAnchorsText),
-    [onboardingAnchorsText]
+  const normalizedWakeTime = useMemo(
+    () => parseTimeInput(onboardingWakeTime),
+    [onboardingWakeTime]
+  );
+  const normalizedBedtime = useMemo(
+    () => parseTimeInput(onboardingBedtime),
+    [onboardingBedtime]
   );
   const onboardingFormValid = useMemo(
     () =>
-      HHMM_REGEX.test(onboardingWakeTime.trim()) &&
-      HHMM_REGEX.test(onboardingBedtime.trim()) &&
-      onboardingPlaybook.trim().length >= 3 &&
-      onboardingAnchors.length > 0,
-    [onboardingAnchors, onboardingBedtime, onboardingPlaybook, onboardingWakeTime]
+      Boolean(normalizedWakeTime) &&
+      Boolean(normalizedBedtime) &&
+      onboardingStruggles.trim().length >= 3 &&
+      onboardingGoals.trim().length >= 3,
+    [normalizedBedtime, normalizedWakeTime, onboardingGoals, onboardingStruggles]
   );
 
   const onCompleteOnboarding = useCallback(async () => {
     if (!deviceId || !onboardingFormValid || onboardingSaving) return;
+    const wakeTime = parseTimeInput(onboardingWakeTime);
+    const bedtime = parseTimeInput(onboardingBedtime);
+    if (!wakeTime || !bedtime) return;
+
     setError(null);
     setOnboardingSaving(true);
     try {
       const response = await completeOnboarding(BACKEND_URL, {
         device_id: deviceId,
         timezone,
-        wake_time: onboardingWakeTime.trim(),
-        bedtime: onboardingBedtime.trim(),
-        playbook: onboardingPlaybook.trim(),
-        health_anchors: onboardingAnchors
+        wake_time: wakeTime,
+        bedtime,
+        playbook: buildPlaybookSummary({
+          struggles: onboardingStruggles,
+          goals: onboardingGoals,
+          motivationStyle: onboardingMotivationStyle
+        }),
+        health_anchors: buildHealthAnchors({
+          wakeTime,
+          bedtime,
+          goals: onboardingGoals
+        })
       });
       setNeedsOnboarding(Boolean(response.needs_onboarding));
       setProfileContext(response.profile_context || DEFAULT_PROFILE_CONTEXT);
@@ -455,11 +673,12 @@ export default function App() {
   }, [
     deviceId,
     loadBootstrap,
-    onboardingAnchors,
     onboardingBedtime,
     onboardingFormValid,
-    onboardingPlaybook,
+    onboardingGoals,
+    onboardingMotivationStyle,
     onboardingSaving,
+    onboardingStruggles,
     onboardingWakeTime,
     timezone
   ]);
@@ -479,9 +698,8 @@ export default function App() {
 
         setActiveThreadId(sessionId);
         setEntryContext(MANUAL_CONTEXT);
-
         if (compact) {
-          setMobileTab("chat");
+          setMobileThreadOpen(false);
         }
       } catch (threadError) {
         setError(
@@ -505,7 +723,7 @@ export default function App() {
       setActiveThreadId(created.session_id);
       setEntryContext(MANUAL_CONTEXT);
       if (compact) {
-        setMobileTab("chat");
+        setMobileThreadOpen(false);
       }
     } catch (createError) {
       setError(
@@ -514,67 +732,83 @@ export default function App() {
     }
   }, [compact, deviceId, timezone]);
 
+  const onSwipeStart = useCallback((x: number) => {
+    swipeStartX.current = x;
+  }, []);
+
+  const onSwipeEnd = useCallback(
+    (x: number) => {
+      if (!compact) return;
+      const startX = swipeStartX.current;
+      swipeStartX.current = null;
+      if (startX === null) return;
+
+      const delta = x - startX;
+      if (delta > 56) {
+        setMobileThreadOpen(true);
+      } else if (delta < -56) {
+        setMobileThreadOpen(false);
+      }
+    },
+    [compact]
+  );
+
   const activeMessages =
     (activeThreadId && threadMessages[activeThreadId]) || [];
 
-  const showThreads = !needsOnboarding && (!compact || mobileTab === "threads");
-  const showChat = needsOnboarding || !compact || mobileTab === "chat";
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.standaloneScreen}>
+        <StatusBar barStyle="dark-content" backgroundColor="#f3f5f7" />
+        <View style={styles.standaloneState}>
+          <Text style={styles.centeredTitle}>Getting Intentive ready...</Text>
+          <Text style={styles.centeredSubtitle}>
+            Loading your device and chat context.
+          </Text>
+          {error ? <Text style={styles.authError}>{error}</Text> : null}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (needsOnboarding) {
+    return (
+      <OnboardingScreen
+        error={error}
+        onboardingWakeTime={onboardingWakeTime}
+        onboardingBedtime={onboardingBedtime}
+        onboardingStruggles={onboardingStruggles}
+        onboardingGoals={onboardingGoals}
+        onboardingMotivationStyle={onboardingMotivationStyle}
+        onboardingFormValid={onboardingFormValid}
+        onboardingSaving={onboardingSaving}
+        onboardingStatus={profileContext.onboarding_status}
+        setOnboardingWakeTime={setOnboardingWakeTime}
+        setOnboardingBedtime={setOnboardingBedtime}
+        setOnboardingStruggles={setOnboardingStruggles}
+        setOnboardingGoals={setOnboardingGoals}
+        setOnboardingMotivationStyle={setOnboardingMotivationStyle}
+        onCompleteOnboarding={() => {
+          void onCompleteOnboarding();
+        }}
+      />
+    );
+  }
+
+  const showThreads = !compact;
+  const showChat = true;
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f3f5f7" />
 
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Intentive</Text>
-          <Text style={styles.subtitle}>Thread list + real-time chat</Text>
-        </View>
-        <View style={styles.headerRight}>
-          <Text style={styles.headerMeta}>Device: {deviceId ? "ready" : "loading"}</Text>
-          <Text style={styles.headerMeta}>{timezone}</Text>
-        </View>
-      </View>
-
-      {compact ? (
-        <View style={styles.mobileTabs}>
-          <Pressable
-            onPress={() => setMobileTab("threads")}
-            style={[
-              styles.mobileTab,
-              mobileTab === "threads" && styles.mobileTabActive,
-              needsOnboarding && styles.mobileTabDisabled
-            ]}
-            disabled={needsOnboarding}
-          >
-            <Text
-              style={[
-                styles.mobileTabText,
-                mobileTab === "threads" && styles.mobileTabTextActive,
-                needsOnboarding && styles.mobileTabTextDisabled
-              ]}
-            >
-              Threads
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setMobileTab("chat")}
-            style={[styles.mobileTab, mobileTab === "chat" && styles.mobileTabActive]}
-          >
-            <Text
-              style={[
-                styles.mobileTabText,
-                mobileTab === "chat" && styles.mobileTabTextActive
-              ]}
-            >
-              Chat
-            </Text>
-          </Pressable>
-        </View>
-      ) : null}
-
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-      <View style={styles.content}>
+      <View
+        style={styles.content}
+        onTouchStart={(event) => onSwipeStart(event.nativeEvent.pageX)}
+        onTouchEnd={(event) => onSwipeEnd(event.nativeEvent.pageX)}
+      >
         {showThreads ? (
           <View style={styles.threadPane}>
             <View style={styles.threadPaneHeader}>
@@ -610,87 +844,7 @@ export default function App() {
 
         {showChat ? (
           <View style={styles.chatPane}>
-            {loading ? (
-              <View style={styles.centeredState}>
-                <Text style={styles.centeredTitle}>Preparing your workspace...</Text>
-              </View>
-            ) : needsOnboarding ? (
-              <View style={styles.onboardingPane}>
-                <Text style={styles.onboardingTitle}>Quick setup before chat</Text>
-                <Text style={styles.onboardingSubtitle}>
-                  Fill this once so the morning assistant has your real context.
-                </Text>
-
-                <View style={styles.onboardingField}>
-                  <Text style={styles.onboardingLabel}>Wake time (HH:MM)</Text>
-                  <TextInput
-                    value={onboardingWakeTime}
-                    onChangeText={setOnboardingWakeTime}
-                    placeholder="07:30"
-                    placeholderTextColor="#7f8a97"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={styles.onboardingInput}
-                  />
-                </View>
-
-                <View style={styles.onboardingField}>
-                  <Text style={styles.onboardingLabel}>Bedtime (HH:MM)</Text>
-                  <TextInput
-                    value={onboardingBedtime}
-                    onChangeText={setOnboardingBedtime}
-                    placeholder="23:30"
-                    placeholderTextColor="#7f8a97"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={styles.onboardingInput}
-                  />
-                </View>
-
-                <View style={styles.onboardingField}>
-                  <Text style={styles.onboardingLabel}>Playbook (what helps when stuck)</Text>
-                  <TextInput
-                    value={onboardingPlaybook}
-                    onChangeText={setOnboardingPlaybook}
-                    placeholder="Example: ask me for one tiny next step and a 10-minute sprint."
-                    placeholderTextColor="#7f8a97"
-                    multiline
-                    style={[styles.onboardingInput, styles.onboardingMultiline]}
-                  />
-                </View>
-
-                <View style={styles.onboardingField}>
-                  <Text style={styles.onboardingLabel}>Health anchors (one per line)</Text>
-                  <TextInput
-                    value={onboardingAnchorsText}
-                    onChangeText={setOnboardingAnchorsText}
-                    placeholder={"Breakfast\nWalk\nMedication"}
-                    placeholderTextColor="#7f8a97"
-                    multiline
-                    style={[styles.onboardingInput, styles.onboardingMultiline]}
-                  />
-                </View>
-
-                <Pressable
-                  onPress={() => void onCompleteOnboarding()}
-                  disabled={!onboardingFormValid || onboardingSaving}
-                  style={[
-                    styles.onboardingButton,
-                    (!onboardingFormValid || onboardingSaving) && styles.onboardingButtonDisabled
-                  ]}
-                >
-                  <Text style={styles.onboardingButtonText}>
-                    {onboardingSaving ? "Saving..." : "Save and continue"}
-                  </Text>
-                </Pressable>
-
-                <Text style={styles.onboardingHint}>
-                  {profileContext.onboarding_status === "completed"
-                    ? "Profile is already completed."
-                    : "All fields are required to continue."}
-                </Text>
-              </View>
-            ) : !deviceId || !activeThreadId ? (
+            {!deviceId || !activeThreadId ? (
               <View style={styles.centeredState}>
                 <Text style={styles.centeredTitle}>No active thread</Text>
                 <Text style={styles.centeredSubtitle}>
@@ -708,6 +862,61 @@ export default function App() {
                 entryContext={entryContext}
               />
             )}
+
+            {compact ? (
+              <Pressable
+                style={styles.mobileMenuButton}
+                onPress={() => setMobileThreadOpen(true)}
+              >
+                <Text style={styles.mobileMenuButtonText}>☰</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+
+        {compact && mobileThreadOpen ? (
+          <View
+            style={styles.mobileDrawerOverlay}
+            onTouchStart={(event) => onSwipeStart(event.nativeEvent.pageX)}
+            onTouchEnd={(event) => onSwipeEnd(event.nativeEvent.pageX)}
+          >
+            <View style={styles.mobileDrawerPanel}>
+              <View style={[styles.threadPane, styles.mobileThreadPane]}>
+                <View style={styles.threadPaneHeader}>
+                  <Text style={styles.threadPaneTitle}>Threads</Text>
+                  <Pressable onPress={() => void onCreateThread()} style={styles.newThreadButton}>
+                    <Text style={styles.newThreadButtonText}>+ New</Text>
+                  </Pressable>
+                </View>
+
+                <FlatList
+                  data={threads}
+                  keyExtractor={(item) => item.session_id}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      onPress={() => void onSelectThread(item.session_id)}
+                      style={[
+                        styles.threadItem,
+                        activeThreadId === item.session_id && styles.threadItemActive
+                      ]}
+                    >
+                      <Text style={styles.threadTitle}>{item.title}</Text>
+                      <Text style={styles.threadDate}>{item.date}</Text>
+                    </Pressable>
+                  )}
+                  ListEmptyComponent={
+                    <View style={styles.emptyThreads}>
+                      <Text style={styles.emptyThreadsText}>No threads yet</Text>
+                    </View>
+                  }
+                />
+              </View>
+            </View>
+
+            <Pressable
+              style={styles.mobileDrawerBackdrop}
+              onPress={() => setMobileThreadOpen(false)}
+            />
           </View>
         ) : null}
       </View>
@@ -720,64 +929,68 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f3f5f7"
   },
-  header: {
+  standaloneScreen: {
+    flex: 1,
+    backgroundColor: "#f3f5f7"
+  },
+  standaloneState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24
+  },
+  authShell: {
+    flex: 1,
+    width: "100%",
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#dde3ea",
-    flexDirection: "row",
-    justifyContent: "space-between",
+    paddingVertical: 20,
+    justifyContent: "flex-start",
     alignItems: "center"
   },
-  title: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#0f1720"
+  authHeader: {
+    width: "100%",
+    maxWidth: 720,
+    marginBottom: 16
   },
-  subtitle: {
-    marginTop: 2,
+  authEyebrow: {
     color: "#59636f",
-    fontSize: 13
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.8
   },
-  headerRight: {
-    alignItems: "flex-end"
-  },
-  headerMeta: {
-    color: "#59636f",
-    fontSize: 12
-  },
-  mobileTabs: {
-    flexDirection: "row",
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingTop: 10
-  },
-  mobileTab: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#ccd4de",
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: "center",
-    backgroundColor: "#ffffff"
-  },
-  mobileTabActive: {
-    borderColor: "#0f1720",
-    backgroundColor: "#0f1720"
-  },
-  mobileTabDisabled: {
-    opacity: 0.45
-  },
-  mobileTabText: {
+  authTitle: {
+    marginTop: 8,
     color: "#0f1720",
-    fontWeight: "600"
+    fontSize: 28,
+    fontWeight: "800"
   },
-  mobileTabTextActive: {
-    color: "#ffffff"
+  authSubtitle: {
+    marginTop: 8,
+    color: "#59636f",
+    fontSize: 15,
+    lineHeight: 22
   },
-  mobileTabTextDisabled: {
-    color: "#6d7784"
+  authError: {
+    width: "100%",
+    maxWidth: 720,
+    color: "#b42318",
+    backgroundColor: "#fee4e2",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12
+  },
+  authCard: {
+    width: "100%",
+    maxWidth: 720,
+    flex: 1,
+    minHeight: 320,
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#d8e0ea",
+    overflow: "hidden"
   },
   errorText: {
     color: "#b42318",
@@ -792,7 +1005,8 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     gap: 12,
-    padding: 12
+    padding: 12,
+    position: "relative"
   },
   threadPane: {
     width: 280,
@@ -864,10 +1078,57 @@ const styles = StyleSheet.create({
     borderColor: "#d8e0ea",
     overflow: "hidden"
   },
-  onboardingPane: {
+  mobileMenuButton: {
+    position: "absolute",
+    top: 14,
+    left: 14,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#0f1720",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 3
+  },
+  mobileMenuButtonText: {
+    color: "#ffffff",
+    fontSize: 18,
+    lineHeight: 20,
+    fontWeight: "700"
+  },
+  mobileDrawerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: "row",
+    zIndex: 20
+  },
+  mobileDrawerPanel: {
+    width: "82%",
+    maxWidth: 320,
+    backgroundColor: "#ffffff",
+    borderRightWidth: 1,
+    borderRightColor: "#d8e0ea"
+  },
+  mobileThreadPane: {
     flex: 1,
+    width: "100%",
+    maxWidth: "100%",
+    borderWidth: 0,
+    borderRadius: 0
+  },
+  mobileDrawerBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 32, 0.36)"
+  },
+  onboardingPane: {
+    flexGrow: 1,
     paddingHorizontal: 16,
     paddingVertical: 18
+  },
+  onboardingKeyboardArea: {
+    flex: 1
+  },
+  onboardingDismissArea: {
+    flex: 1
   },
   onboardingTitle: {
     color: "#0f1720",
@@ -889,6 +1150,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 6
   },
+  onboardingHelperText: {
+    marginTop: 5,
+    color: "#6d7784",
+    fontSize: 12
+  },
   onboardingInput: {
     borderWidth: 1,
     borderColor: "#c9d2dd",
@@ -901,6 +1167,30 @@ const styles = StyleSheet.create({
   onboardingMultiline: {
     minHeight: 74,
     textAlignVertical: "top"
+  },
+  motivationOptions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  motivationOption: {
+    borderWidth: 1,
+    borderColor: "#c9d2dd",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    backgroundColor: "#ffffff"
+  },
+  motivationOptionActive: {
+    borderColor: "#0f1720",
+    backgroundColor: "#0f1720"
+  },
+  motivationOptionText: {
+    color: "#0f1720",
+    fontWeight: "600"
+  },
+  motivationOptionTextActive: {
+    color: "#ffffff"
   },
   onboardingButton: {
     marginTop: 10,
