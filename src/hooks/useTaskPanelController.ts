@@ -194,11 +194,9 @@ export const useTaskPanelController = ({
   return {
     taskPanelSnapshot: state.snapshot,
     taskPanelVisibility: state.visibility,
-    refreshingTaskPanel: refreshing,
     taskActionError: actionError,
     pendingTaskActionKey: pendingActionKey,
     handleClosePanel,
-    handleRefreshTaskPanel: handleRefresh,
     handleTaskPanelState,
     handleTaskStatusToggle,
     handleTogglePanel,

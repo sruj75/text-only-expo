@@ -16,12 +16,10 @@ type ChatFooterRailProps = {
   keyboardOffset: number;
   panelMaxHeight: number;
   pendingActionKey: string | null;
-  refreshing: boolean;
   snapshot: TaskPanelSnapshot;
   visibility: TaskPanelVisibility;
   onComposerLayout?: (event: LayoutChangeEvent) => void;
   onClosePanel: () => void;
-  onRefreshPanel: () => void;
   onTogglePanel: () => void;
   onToggleTaskStatus: (task: TaskPanelTask) => void;
   onToggleTopEssential: (task: TaskPanelTask) => void;
@@ -32,12 +30,10 @@ export const ChatFooterRail = ({
   keyboardOffset,
   panelMaxHeight,
   pendingActionKey,
-  refreshing,
   snapshot,
   visibility,
   onComposerLayout,
   onClosePanel,
-  onRefreshPanel,
   onTogglePanel,
   onToggleTaskStatus,
   onToggleTopEssential
@@ -69,10 +65,8 @@ export const ChatFooterRail = ({
         visibility={visibility}
         maxHeight={panelMaxHeight}
         pendingActionKey={pendingActionKey}
-        refreshing={refreshing}
         actionError={actionError}
         onClose={onClosePanel}
-        onRefresh={onRefreshPanel}
         onToggleTaskStatus={onToggleTaskStatus}
         onToggleTopEssential={onToggleTopEssential}
       />

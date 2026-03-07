@@ -363,11 +363,9 @@ const ChatPane = ({
   const {
     taskPanelSnapshot,
     taskPanelVisibility,
-    refreshingTaskPanel,
     taskActionError,
     pendingTaskActionKey,
     handleClosePanel,
-    handleRefreshTaskPanel,
     handleTaskPanelState,
     handleTaskStatusToggle,
     handleTogglePanel,
@@ -454,7 +452,6 @@ const ChatPane = ({
             keyboardOffset={keyboardOffset}
             panelMaxHeight={taskPanelMaxHeight}
             pendingActionKey={pendingTaskActionKey}
-            refreshing={refreshingTaskPanel}
             snapshot={taskPanelSnapshot}
             visibility={taskPanelVisibility}
             onComposerLayout={(event) => {
@@ -464,7 +461,6 @@ const ChatPane = ({
               );
             }}
             onClosePanel={handleClosePanel}
-            onRefreshPanel={handleRefreshTaskPanel}
             onTogglePanel={handleTogglePanel}
             onToggleTaskStatus={handleTaskStatusToggle}
             onToggleTopEssential={handleTopEssentialToggle}

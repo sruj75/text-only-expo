@@ -10,47 +10,17 @@ import {
 } from "react-native";
 
 import { getTaskPanelHeightRatio } from "../lib/taskPanel";
-import type {
-  TaskPanelRunStatus,
-  TaskPanelSnapshot,
-  TaskPanelTask,
-  TaskPanelVisibility
-} from "../types/chat";
+import type { TaskPanelSnapshot, TaskPanelTask, TaskPanelVisibility } from "../types/chat";
 
 type TaskPanelSheetProps = {
   snapshot: TaskPanelSnapshot;
   visibility: TaskPanelVisibility;
   maxHeight: number;
   pendingActionKey: string | null;
-  refreshing: boolean;
   actionError: string | null;
   onClose: () => void;
-  onRefresh: () => void;
   onToggleTaskStatus: (task: TaskPanelTask) => void;
   onToggleTopEssential: (task: TaskPanelTask) => void;
-};
-
-const statusCopy: Record<TaskPanelRunStatus, string> = {
-  idle: "Idle",
-  running: "Working",
-  complete: "Done",
-  error: "Error"
-};
-
-const taskStatusLabel = (status: string) => {
-  if (status === "done") {
-    return "Done";
-  }
-
-  if (status === "in_progress") {
-    return "In progress";
-  }
-
-  if (status === "blocked") {
-    return "Blocked";
-  }
-
-  return "To do";
 };
 
 export const TaskPanelSheet = ({
@@ -58,10 +28,8 @@ export const TaskPanelSheet = ({
   visibility,
   maxHeight,
   pendingActionKey,
-  refreshing,
   actionError,
   onClose,
-  onRefresh,
   onToggleTaskStatus,
   onToggleTopEssential
 }: TaskPanelSheetProps) => {
@@ -99,6 +67,12 @@ export const TaskPanelSheet = ({
     snapshot.top_essentials.length > 0
       ? snapshot.top_essentials
       : snapshot.tasks.filter((task) => task.is_top_essential).map((task) => task.title);
+  const currentFocusTask =
+    snapshot.tasks.find((task) => task.is_active) ||
+    snapshot.tasks.find((task) => task.status !== "done") ||
+    null;
+  const currentFocusTitle =
+    currentFocusTask?.title || snapshot.headline || snapshot.active_action || null;
 
   return (
     <Animated.View
@@ -120,36 +94,7 @@ export const TaskPanelSheet = ({
           <View style={styles.handle} />
         </View>
 
-        <View style={styles.headerRow}>
-          <View style={styles.headerTextGroup}>
-            <Text style={styles.title}>Task Workspace</Text>
-            <Text style={styles.subtitle}>
-              {snapshot.headline || snapshot.active_action || "Live task changes will show here."}
-            </Text>
-          </View>
-
-          <View style={styles.headerActions}>
-            <Pressable
-              onPress={onRefresh}
-              disabled={refreshing}
-              style={[styles.refreshButton, refreshing && styles.taskActionDisabled]}
-            >
-              <Text style={styles.refreshButtonText}>
-                {refreshing ? "Refreshing..." : "Refresh"}
-              </Text>
-            </Pressable>
-
-            <View style={[styles.statusChip, statusChipStyles[snapshot.run_status]]}>
-              <Text style={styles.statusChipText}>{statusCopy[snapshot.run_status]}</Text>
-            </View>
-          </View>
-        </View>
-
-        {snapshot.active_action ? (
-          <View style={styles.activeActionBadge}>
-            <Text style={styles.activeActionText}>{snapshot.active_action}</Text>
-          </View>
-        ) : null}
+        <Text style={styles.title}>Task Manager</Text>
 
         {snapshot.error_message || actionError ? (
           <View style={styles.errorCard}>
@@ -163,17 +108,26 @@ export const TaskPanelSheet = ({
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Top essentials</Text>
+            <Text style={styles.sectionTitle}>Now</Text>
+            {currentFocusTitle ? (
+              <Text style={styles.nowText}>{currentFocusTitle}</Text>
+            ) : (
+              <Text style={styles.emptyText}>Nothing to do yet.</Text>
+            )}
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Priorities</Text>
             {topEssentials.length > 0 ? (
-              <View style={styles.chips}>
+              <View style={styles.priorityList}>
                 {topEssentials.map((item) => (
-                  <View key={item} style={styles.essentialChip}>
-                    <Text style={styles.essentialChipText}>{item}</Text>
-                  </View>
+                  <Text key={item} style={styles.priorityText}>
+                    {item}
+                  </Text>
                 ))}
               </View>
             ) : (
-              <Text style={styles.emptyText}>No top essentials yet.</Text>
+              <Text style={styles.emptyText}>No priorities yet.</Text>
             )}
           </View>
 
@@ -188,94 +142,75 @@ export const TaskPanelSheet = ({
                   const essentialPending = pendingActionKey === essentialActionKey;
 
                   return (
-                    <View
-                      key={task.id}
-                      style={[styles.taskCard, task.is_active && styles.taskCardActive]}
-                    >
-                      <View style={styles.taskHeader}>
-                        <View style={styles.taskTitleGroup}>
-                          <Text style={styles.taskTitle}>{task.title}</Text>
-                          <Text style={styles.taskMeta}>
-                            {taskStatusLabel(task.status)}
-                            {task.time_label ? ` • ${task.time_label}` : ""}
-                          </Text>
-                        </View>
+                    <View key={task.id} style={styles.taskRow}>
+                      <Pressable
+                        disabled={statusPending}
+                        onPress={() => onToggleTaskStatus(task)}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          task.status === "done" ? `Mark ${task.title} as not done` : `Mark ${task.title} done`
+                        }
+                        style={[styles.taskCheckButton, statusPending && styles.controlDisabled]}
+                      >
+                        <Text style={styles.taskCheckText}>
+                          {task.status === "done" ? "[x]" : "[ ]"}
+                        </Text>
+                      </Pressable>
 
-                        {task.is_active ? (
-                          <View style={styles.livePill}>
-                            <Text style={styles.livePillText}>Live</Text>
-                          </View>
-                        ) : null}
-                      </View>
+                      <Text
+                        style={[
+                          styles.taskText,
+                          task.status === "done" && styles.taskTextDone
+                        ]}
+                      >
+                        {task.title}
+                      </Text>
 
-                      <View style={styles.taskActions}>
-                        <Pressable
-                          disabled={statusPending}
-                          onPress={() => onToggleTaskStatus(task)}
+                      <Pressable
+                        disabled={essentialPending}
+                        onPress={() => onToggleTopEssential(task)}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          task.is_top_essential
+                            ? `Remove ${task.title} from priorities`
+                            : `Add ${task.title} to priorities`
+                        }
+                        style={[
+                          styles.priorityToggleButton,
+                          essentialPending && styles.controlDisabled
+                        ]}
+                      >
+                        <Text
                           style={[
-                            styles.taskActionButton,
-                            styles.taskActionPrimary,
-                            statusPending && styles.taskActionDisabled
+                            styles.priorityToggleText,
+                            task.is_top_essential && styles.priorityToggleTextActive
                           ]}
                         >
-                          <Text style={styles.taskActionPrimaryText}>
-                            {statusPending
-                              ? "Saving..."
-                              : task.status === "done"
-                                ? "Undo done"
-                                : "Mark done"}
-                          </Text>
-                        </Pressable>
-
-                        <Pressable
-                          disabled={essentialPending}
-                          onPress={() => onToggleTopEssential(task)}
-                          style={[
-                            styles.taskActionButton,
-                            styles.taskActionSecondary,
-                            essentialPending && styles.taskActionDisabled
-                          ]}
-                        >
-                          <Text style={styles.taskActionSecondaryText}>
-                            {essentialPending
-                              ? "Saving..."
-                              : task.is_top_essential
-                                ? "Remove essential"
-                                : "Make essential"}
-                          </Text>
-                        </Pressable>
-                      </View>
+                          {task.is_top_essential ? "★" : "☆"}
+                        </Text>
+                      </Pressable>
                     </View>
                   );
                 })}
               </View>
             ) : (
-              <Text style={styles.emptyText}>
-                Tasks, priorities, and time boxes will appear here when the agent starts working.
-              </Text>
+              <Text style={styles.emptyText}>No tasks yet.</Text>
             )}
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Today&apos;s schedule</Text>
+            <Text style={styles.sectionTitle}>Schedule</Text>
             {snapshot.schedule.length > 0 ? (
               <View style={styles.scheduleList}>
                 {snapshot.schedule.map((block) => (
                   <View key={block.id} style={styles.scheduleRow}>
-                    <Text style={styles.scheduleTime}>
-                      {block.start_label} - {block.end_label}
-                    </Text>
-                    <View style={styles.scheduleTextGroup}>
-                      <Text style={styles.scheduleTitle}>{block.title}</Text>
-                      {block.status ? (
-                        <Text style={styles.scheduleMeta}>{block.status}</Text>
-                      ) : null}
-                    </View>
+                    <Text style={styles.scheduleTime}>{block.start_label}</Text>
+                    <Text style={styles.scheduleTitle}>{block.title}</Text>
                   </View>
                 ))}
               </View>
             ) : (
-              <Text style={styles.emptyText}>No time blocks yet.</Text>
+              <Text style={styles.emptyText}>No schedule yet.</Text>
             )}
           </View>
         </ScrollView>
@@ -293,97 +228,30 @@ const styles = StyleSheet.create({
     marginTop: 10,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#d8e0ea",
-    backgroundColor: "#fbfcfd",
-    paddingHorizontal: 16,
+    borderColor: "#dedede",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 20,
     paddingTop: 10,
-    paddingBottom: 16
+    paddingBottom: 18
   },
   handleArea: {
     alignItems: "center",
-    marginBottom: 10
+    marginBottom: 14
   },
   handle: {
     width: 54,
-    height: 6,
+    height: 5,
     borderRadius: 999,
-    backgroundColor: "#c9d2dd",
+    backgroundColor: "#d4d4d4",
     alignSelf: "center"
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12
-  },
-  headerTextGroup: {
-    flex: 1
-  },
-  headerActions: {
-    alignItems: "flex-end",
-    gap: 8
   },
   title: {
     color: "#0f1720",
     fontSize: 20,
-    fontWeight: "800"
-  },
-  subtitle: {
-    marginTop: 4,
-    color: "#59636f",
-    fontSize: 13,
-    lineHeight: 18
-  },
-  statusChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999
-  },
-  refreshButton: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#c9d2dd",
-    backgroundColor: "#ffffff",
-    paddingHorizontal: 12,
-    paddingVertical: 8
-  },
-  refreshButtonText: {
-    color: "#0f1720",
-    fontSize: 12,
-    fontWeight: "700"
-  },
-  statusIdle: {
-    backgroundColor: "#eef2f6"
-  },
-  statusRunning: {
-    backgroundColor: "#dfeeff"
-  },
-  statusComplete: {
-    backgroundColor: "#dff5e5"
-  },
-  statusError: {
-    backgroundColor: "#ffe3e1"
-  },
-  statusChipText: {
-    color: "#0f1720",
-    fontWeight: "700",
-    fontSize: 12
-  },
-  activeActionBadge: {
-    alignSelf: "flex-start",
-    marginTop: 12,
-    borderRadius: 999,
-    backgroundColor: "#0f1720",
-    paddingHorizontal: 10,
-    paddingVertical: 6
-  },
-  activeActionText: {
-    color: "#ffffff",
-    fontSize: 12,
     fontWeight: "700"
   },
   errorCard: {
-    marginTop: 12,
+    marginTop: 10,
     borderRadius: 12,
     backgroundColor: "#ffe9e6",
     paddingHorizontal: 12,
@@ -396,11 +264,11 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
-    marginTop: 14
+    marginTop: 18
   },
   scrollContent: {
     paddingBottom: 12,
-    gap: 16
+    gap: 24
   },
   section: {
     gap: 10
@@ -408,133 +276,86 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: "#0f1720",
     fontSize: 14,
-    fontWeight: "800"
+    fontWeight: "700"
   },
-  chips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  nowText: {
+    color: "#0f1720",
+    fontSize: 24,
+    lineHeight: 32,
+    fontWeight: "500"
+  },
+  priorityList: {
     gap: 8
   },
-  essentialChip: {
-    borderRadius: 999,
-    backgroundColor: "#0f1720",
-    paddingHorizontal: 12,
-    paddingVertical: 8
-  },
-  essentialChipText: {
-    color: "#ffffff",
-    fontWeight: "600"
+  priorityText: {
+    color: "#0f1720",
+    fontSize: 16,
+    lineHeight: 22
   },
   taskList: {
     gap: 10
   },
-  taskCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#d8e0ea",
-    backgroundColor: "#ffffff",
-    padding: 12,
-    gap: 12
-  },
-  taskCardActive: {
-    borderColor: "#0f1720",
-    shadowColor: "#0f1720",
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2
-  },
-  taskHeader: {
+  taskRow: {
+    minHeight: 32,
     flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12
-  },
-  taskTitleGroup: {
-    flex: 1
-  },
-  taskTitle: {
-    color: "#0f1720",
-    fontSize: 15,
-    fontWeight: "700"
-  },
-  taskMeta: {
-    marginTop: 4,
-    color: "#6d7784",
-    fontSize: 12
-  },
-  livePill: {
-    borderRadius: 999,
-    backgroundColor: "#eef2f6",
-    paddingHorizontal: 8,
-    paddingVertical: 4
-  },
-  livePillText: {
-    color: "#0f1720",
-    fontSize: 11,
-    fontWeight: "700"
-  },
-  taskActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    alignItems: "center",
     gap: 8
   },
-  taskActionButton: {
-    minHeight: 38,
-    borderRadius: 10,
-    paddingHorizontal: 12,
+  taskCheckButton: {
+    minWidth: 28,
+    alignItems: "flex-start",
     justifyContent: "center"
   },
-  taskActionPrimary: {
-    backgroundColor: "#0f1720"
+  taskCheckText: {
+    color: "#0f1720",
+    fontSize: 16,
+    lineHeight: 20
   },
-  taskActionSecondary: {
-    borderWidth: 1,
-    borderColor: "#c9d2dd",
-    backgroundColor: "#ffffff"
+  taskText: {
+    flex: 1,
+    color: "#0f1720",
+    fontSize: 15,
+    lineHeight: 22
   },
-  taskActionDisabled: {
+  taskTextDone: {
+    color: "#7a8593",
+    textDecorationLine: "line-through"
+  },
+  priorityToggleButton: {
+    minWidth: 24,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  priorityToggleText: {
+    color: "#c0c7d1",
+    fontSize: 18,
+    lineHeight: 18
+  },
+  priorityToggleTextActive: {
+    color: "#0f1720"
+  },
+  controlDisabled: {
     opacity: 0.6
   },
-  taskActionPrimaryText: {
-    color: "#ffffff",
-    fontWeight: "700"
-  },
-  taskActionSecondaryText: {
-    color: "#0f1720",
-    fontWeight: "700"
-  },
   scheduleList: {
-    gap: 10
+    gap: 8
   },
   scheduleRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-    borderRadius: 14,
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "#d8e0ea",
-    padding: 12
+    alignItems: "baseline",
+    gap: 12
   },
   scheduleTime: {
-    width: 92,
+    width: 56,
     color: "#0f1720",
-    fontWeight: "700",
+    fontWeight: "500",
     fontSize: 12
-  },
-  scheduleTextGroup: {
-    flex: 1
   },
   scheduleTitle: {
+    flex: 1,
     color: "#0f1720",
-    fontWeight: "700",
-    fontSize: 14
-  },
-  scheduleMeta: {
-    marginTop: 3,
-    color: "#6d7784",
-    fontSize: 12
+    fontSize: 14,
+    lineHeight: 20
   },
   emptyText: {
     color: "#6d7784",
@@ -542,10 +363,3 @@ const styles = StyleSheet.create({
     lineHeight: 19
   }
 });
-
-const statusChipStyles = {
-  idle: styles.statusIdle,
-  running: styles.statusRunning,
-  complete: styles.statusComplete,
-  error: styles.statusError
-};
