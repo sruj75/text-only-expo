@@ -124,15 +124,10 @@ export const useTaskPanelController = ({
     const opensExpanded = state.visibility === "closed";
     dispatch({ type: "toggle_panel" });
 
-    if (
-      opensExpanded &&
-      !refreshing &&
-      state.snapshot.tasks.length === 0 &&
-      state.snapshot.schedule.length === 0
-    ) {
+    if (opensExpanded && !refreshing) {
       void handleRefresh();
     }
-  }, [handleRefresh, refreshing, state.snapshot.schedule.length, state.snapshot.tasks.length, state.visibility]);
+  }, [handleRefresh, refreshing, state.visibility]);
 
   const handleClosePanel = useCallback(() => {
     dispatch({ type: "close_panel" });

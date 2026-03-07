@@ -9,7 +9,7 @@ import {
   View
 } from "react-native";
 
-import { getTaskPanelHeightRatio } from "../lib/taskPanel";
+import { getCurrentFocusTitle, getTaskPanelHeightRatio } from "../lib/taskPanel";
 import type { TaskPanelSnapshot, TaskPanelTask, TaskPanelVisibility } from "../types/chat";
 
 type TaskPanelSheetProps = {
@@ -67,12 +67,7 @@ export const TaskPanelSheet = ({
     snapshot.top_essentials.length > 0
       ? snapshot.top_essentials
       : snapshot.tasks.filter((task) => task.is_top_essential).map((task) => task.title);
-  const currentFocusTask =
-    snapshot.tasks.find((task) => task.is_active) ||
-    snapshot.tasks.find((task) => task.status !== "done") ||
-    null;
-  const currentFocusTitle =
-    currentFocusTask?.title || snapshot.headline || snapshot.active_action || null;
+  const currentFocusTitle = getCurrentFocusTitle(snapshot);
 
   return (
     <Animated.View

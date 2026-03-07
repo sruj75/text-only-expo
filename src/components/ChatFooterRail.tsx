@@ -41,7 +41,7 @@ export const ChatFooterRail = ({
   const aui = useAui();
   const threadIsRunning = useThreadIsRunning();
   const [draft, setDraft] = useState<string>("");
-  const taskWorking = snapshot.run_status === "running";
+  const taskManagerOpen = visibility === "expanded";
 
   const handleSend = useCallback(() => {
     const nextDraft = draft.trim();
@@ -74,11 +74,8 @@ export const ChatFooterRail = ({
       <View style={styles.composer} onLayout={onComposerLayout}>
         <Pressable
           onPress={onTogglePanel}
-          accessibilityLabel="Toggle task workspace"
-          style={[
-            styles.panelToggleButton,
-            taskWorking && styles.panelToggleButtonWorking
-          ]}
+          accessibilityLabel={taskManagerOpen ? "Close task manager" : "Open task manager"}
+          style={styles.panelToggleButton}
         >
           <View style={styles.panelToggleIcon}>
             <View style={styles.panelToggleIconLine} />
@@ -128,9 +125,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#0f1720",
     alignItems: "center",
     justifyContent: "center"
-  },
-  panelToggleButtonWorking: {
-    backgroundColor: "#17803d"
   },
   panelToggleIcon: {
     gap: 4
