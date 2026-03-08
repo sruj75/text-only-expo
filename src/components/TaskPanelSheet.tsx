@@ -17,7 +17,6 @@ type TaskPanelSheetProps = {
   visibility: TaskPanelVisibility;
   maxHeight: number;
   pendingActionKey: string | null;
-  actionError: string | null;
   onClose: () => void;
   onToggleTaskStatus: (task: TaskPanelTask) => void;
   onToggleTopEssential: (task: TaskPanelTask) => void;
@@ -28,7 +27,6 @@ export const TaskPanelSheet = ({
   visibility,
   maxHeight,
   pendingActionKey,
-  actionError,
   onClose,
   onToggleTaskStatus,
   onToggleTopEssential
@@ -90,12 +88,6 @@ export const TaskPanelSheet = ({
         </View>
 
         <Text style={styles.title}>Task Manager</Text>
-
-        {snapshot.error_message || actionError ? (
-          <View style={styles.errorCard}>
-            <Text style={styles.errorText}>{snapshot.error_message || actionError}</Text>
-          </View>
-        ) : null}
 
         <ScrollView
           style={styles.scrollView}
@@ -244,18 +236,6 @@ const styles = StyleSheet.create({
     color: "#0f1720",
     fontSize: 20,
     fontWeight: "700"
-  },
-  errorCard: {
-    marginTop: 10,
-    borderRadius: 12,
-    backgroundColor: "#ffe9e6",
-    paddingHorizontal: 12,
-    paddingVertical: 10
-  },
-  errorText: {
-    color: "#822727",
-    fontSize: 13,
-    lineHeight: 18
   },
   scrollView: {
     flex: 1,

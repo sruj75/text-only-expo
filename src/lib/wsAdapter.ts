@@ -3,6 +3,7 @@ import type {
   ChatModelRunResult,
   ThreadMessage
 } from "@assistant-ui/react-native";
+
 import { normalizeTaskPanelSnapshot } from "./taskPanel";
 import type { EntryContext, TaskPanelSnapshot } from "../types/chat";
 
@@ -15,10 +16,20 @@ type AdapterConfig = {
   onTaskPanelState?: (snapshot: TaskPanelSnapshot) => void;
 };
 
+type SessionInitConfig = {
+  backendUrl: string;
+  deviceId: string;
+  sessionId: string;
+  timezone: string;
+  entryContext: EntryContext | null;
+  onTaskPanelState?: (snapshot: TaskPanelSnapshot) => void;
+};
+
 type WsServerFrame =
   | {
       type: "session_ready";
       session_id: string;
+      messages?: unknown[];
     }
   | {
       type: "assistant_delta";
@@ -87,6 +98,147 @@ const toAssistantUpdate = (text: string): ChatModelRunResult => ({
   ],
 });
 
+const createFrameTransport = (socket: WebSocket) => {
+  const frameQueue: WsServerFrame[] = [];
+  let consumeResolver: ((frame: WsServerFrame) => void) | null = null;
+  let consumeRejecter: ((error: Error) => void) | null = null;
+  let terminalError: Error | null = null;
+
+  const consumeFrame = () =>
+    new Promise<WsServerFrame>((resolve, reject) => {
+      if (frameQueue.length > 0) {
+        const frame = frameQueue.shift();
+        if (frame) {
+          resolve(frame);
+          return;
+        }
+      }
+
+      if (terminalError) {
+        reject(terminalError);
+        return;
+      }
+
+      consumeResolver = resolve;
+      consumeRejecter = reject;
+    });
+
+  const pushFrame = (frame: WsServerFrame) => {
+    if (consumeResolver) {
+      const resolver = consumeResolver;
+      consumeResolver = null;
+      consumeRejecter = null;
+      resolver(frame);
+      return;
+    }
+    frameQueue.push(frame);
+  };
+
+  const failFrameStream = (error: Error) => {
+    terminalError = error;
+    if (consumeRejecter) {
+      const rejecter = consumeRejecter;
+      consumeResolver = null;
+      consumeRejecter = null;
+      rejecter(error);
+    }
+  };
+
+  socket.onmessage = (event) => {
+    try {
+      const parsed = JSON.parse(String(event.data)) as WsServerFrame;
+      pushFrame(parsed);
+    } catch {
+      pushFrame({
+        type: "error",
+        code: "invalid_server_frame",
+        detail: "Server sent an invalid frame",
+      });
+    }
+  };
+  socket.onclose = () => {
+    failFrameStream(new Error("WebSocket closed before response completed"));
+  };
+
+  return {
+    consumeFrame,
+    failFrameStream,
+  };
+};
+
+const openSocket = (wsUrl: string) => {
+  const socket = new WebSocket(wsUrl);
+  const opened = new Promise<void>((resolve, reject) => {
+    socket.onopen = () => resolve();
+    socket.onerror = () => reject(new Error("WebSocket failed to connect"));
+  });
+  const transport = createFrameTransport(socket);
+  return { socket, opened, ...transport };
+};
+
+export const initializeWebSocketSession = async ({
+  backendUrl,
+  deviceId,
+  sessionId,
+  timezone,
+  entryContext,
+  onTaskPanelState,
+}: SessionInitConfig): Promise<{ startupText: string | null }> => {
+  const wsUrl = toWsUrl(backendUrl, {
+    device_id: deviceId,
+    session_id: sessionId,
+    timezone,
+    entry_mode: entryContext?.entry_mode ?? "reactive",
+  });
+  const { socket, opened, consumeFrame } = openSocket(wsUrl);
+
+  try {
+    await opened;
+    socket.send(
+      JSON.stringify({
+        type: "init",
+        device_id: deviceId,
+        session_id: sessionId,
+        timezone,
+        entry_context: entryContext,
+        suppress_startup_on_init: false,
+      }),
+    );
+
+    let sessionReady = false;
+    while (!sessionReady) {
+      const frame = await consumeFrame();
+      if (frame.type === "session_ready") {
+        sessionReady = true;
+        continue;
+      }
+      if (frame.type === "task_panel_state") {
+        onTaskPanelState?.(normalizeTaskPanelSnapshot(frame.state));
+        continue;
+      }
+      if (frame.type === "error") {
+        throw new Error(frame.detail ?? frame.code ?? "Server error");
+      }
+    }
+
+    while (true) {
+      const frame = await consumeFrame();
+      if (frame.type === "assistant_done") {
+        return { startupText: frame.text };
+      }
+      if (frame.type === "task_panel_state") {
+        onTaskPanelState?.(normalizeTaskPanelSnapshot(frame.state));
+        continue;
+      }
+      if (frame.type === "error") {
+        throw new Error(frame.detail ?? frame.code ?? "Server error");
+      }
+    }
+  } finally {
+    socket.close();
+  }
+};
+
 export const createWebSocketChatAdapter = (
   config: AdapterConfig,
 ): ChatModelAdapter => {
@@ -108,92 +260,41 @@ export const createWebSocketChatAdapter = (
         entry_mode: config.getEntryContext()?.entry_mode ?? "reactive",
       });
 
-      const socket = new WebSocket(wsUrl);
-      const frameQueue: WsServerFrame[] = [];
-      let consumeResolver: ((frame: WsServerFrame) => void) | null = null;
-      let consumeRejecter: ((error: Error) => void) | null = null;
-      let terminalError: Error | null = null;
-
-      const consumeFrame = () =>
-        new Promise<WsServerFrame>((resolve, reject) => {
-          if (frameQueue.length > 0) {
-            const frame = frameQueue.shift();
-            if (frame) {
-              resolve(frame);
-              return;
-            }
-          }
-
-          if (terminalError) {
-            reject(terminalError);
-            return;
-          }
-
-          consumeResolver = resolve;
-          consumeRejecter = reject;
-        });
-
-      const pushFrame = (frame: WsServerFrame) => {
-        if (consumeResolver) {
-          const resolver = consumeResolver;
-          consumeResolver = null;
-          consumeRejecter = null;
-          resolver(frame);
-          return;
-        }
-        frameQueue.push(frame);
-      };
-
-      const failFrameStream = (error: Error) => {
-        terminalError = error;
-        if (consumeRejecter) {
-          const rejecter = consumeRejecter;
-          consumeResolver = null;
-          consumeRejecter = null;
-          rejecter(error);
-        }
-      };
-
-      const opened = new Promise<void>((resolve, reject) => {
-        socket.onopen = () => resolve();
-        socket.onerror = () => reject(new Error("WebSocket failed to connect"));
-      });
-
-      socket.onmessage = (event) => {
-        try {
-          const parsed = JSON.parse(String(event.data)) as WsServerFrame;
-          pushFrame(parsed);
-        } catch {
-          pushFrame({
-            type: "error",
-            code: "invalid_server_frame",
-            detail: "Server sent an invalid frame",
-          });
-        }
-      };
-
-      socket.onclose = () => {
-        failFrameStream(new Error("WebSocket closed before response completed"));
-      };
+      const { socket, opened, consumeFrame, failFrameStream } = openSocket(wsUrl);
 
       const abortHandler = () => {
         failFrameStream(new Error("Request aborted"));
         socket.close();
       };
-
       options.abortSignal.addEventListener("abort", abortHandler);
 
       try {
         await opened;
 
-        const initFrame = {
-          type: "init",
-          device_id: config.deviceId,
-          session_id: config.sessionId,
-          timezone: config.timezone,
-          entry_context: config.getEntryContext(),
-        };
-        socket.send(JSON.stringify(initFrame));
+        socket.send(
+          JSON.stringify({
+            type: "init",
+            device_id: config.deviceId,
+            session_id: config.sessionId,
+            timezone: config.timezone,
+            entry_context: config.getEntryContext(),
+            suppress_startup_on_init: true,
+          }),
+        );
+
+        while (true) {
+          const frame = await consumeFrame();
+          if (frame.type === "session_ready") {
+            break;
+          }
+          if (frame.type === "task_panel_state") {
+            config.onTaskPanelState?.(normalizeTaskPanelSnapshot(frame.state));
+            continue;
+          }
+          if (frame.type === "error") {
+            throw new Error(frame.detail ?? frame.code ?? "Server error");
+          }
+        }
 
         const userMessageId = randomId();
         socket.send(

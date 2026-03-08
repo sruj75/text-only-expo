@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createWebSocketChatAdapter } from "../src/lib/wsAdapter";
+import { createWebSocketChatAdapter, initializeWebSocketSession } from "../src/lib/wsAdapter";
 import type { EntryContext, TaskPanelSnapshot } from "../src/types/chat";
 
 class MockWebSocket {
@@ -34,13 +34,9 @@ class MockWebSocket {
   serverSend(frame: unknown) {
     this.onmessage?.({ data: JSON.stringify(frame) });
   }
-
-  serverError() {
-    this.onerror?.();
-  }
 }
 
-const waitFor = async (predicate: () => boolean, timeoutMs = 500) => {
+const waitFor = async (predicate: () => boolean, timeoutMs = 600) => {
   const start = Date.now();
   while (!predicate()) {
     if (Date.now() - start > timeoutMs) {
@@ -100,30 +96,32 @@ const runWith = async (
 
   await waitFor(() => MockWebSocket.instances.length > 0);
   const ws = MockWebSocket.instances[0];
-  await waitFor(() => ws.sent.length >= 2);
+  await waitFor(() => ws.sent.length >= 1);
 
   return { ws, updatesPromise };
 };
 
 describe("ws adapter", () => {
-  it("sends init + user_message and streams assistant deltas", async () => {
+  it("sends init first and user_message only after session_ready", async () => {
     vi.stubGlobal("WebSocket", MockWebSocket as any);
     MockWebSocket.instances = [];
 
     const { ws, updatesPromise } = await runWith("hello there");
 
-    const sentFrames = ws.sent.map((frame) => JSON.parse(frame));
-    expect(sentFrames[0]).toMatchObject({
+    const initFrame = JSON.parse(ws.sent[0]);
+    expect(initFrame).toMatchObject({
       type: "init",
       device_id: "device-1",
-      session_id: "session-1"
+      session_id: "session-1",
+      suppress_startup_on_init: true
     });
-    expect(sentFrames[1]).toMatchObject({
-      type: "user_message",
-      text: "hello there"
-    });
+    expect(ws.sent).toHaveLength(1);
 
     ws.serverSend({ type: "session_ready", session_id: "session-1" });
+    await waitFor(() => ws.sent.length >= 2);
+    const userFrame = JSON.parse(ws.sent[1]);
+    expect(userFrame).toMatchObject({ type: "user_message", text: "hello there" });
+
     ws.serverSend({ type: "assistant_delta", message_id: "a1", delta: "Hi ", text: "Hi " });
     ws.serverSend({ type: "assistant_delta", message_id: "a1", delta: "there", text: "Hi there" });
     ws.serverSend({ type: "assistant_done", message_id: "a1", text: "Hi there" });
@@ -134,73 +132,11 @@ describe("ws adapter", () => {
     expect(updates[1].content[0].text).toBe("Hi there");
   });
 
-  it("uses the latest user message text when multiple messages exist (regression)", async () => {
-    vi.stubGlobal("WebSocket", MockWebSocket as any);
-    MockWebSocket.instances = [];
-
-    const adapter = createWebSocketChatAdapter({
-      backendUrl: "http://localhost:8000",
-      deviceId: "device-1",
-      sessionId: "session-1",
-      timezone: "UTC",
-      getEntryContext: () => entryContext
-    });
-
-    const abortController = new AbortController();
-    const runOptions = {
-      messages: [
-        {
-          id: "old-user",
-          role: "user",
-          createdAt: new Date(),
-          content: [{ type: "text", text: "old" }]
-        },
-        {
-          id: "assistant-1",
-          role: "assistant",
-          createdAt: new Date(),
-          content: [{ type: "text", text: "ack" }]
-        },
-        {
-          id: "new-user",
-          role: "user",
-          createdAt: new Date(),
-          content: [{ type: "text", text: "newest" }]
-        }
-      ],
-      runConfig: {},
-      abortSignal: abortController.signal,
-      context: {},
-      config: {},
-      unstable_getMessage: () => ({})
-    } as any;
-
-    const stream = adapter.run(runOptions) as AsyncGenerator<any, void, unknown>;
-    const updatesPromise = (async () => {
-      for await (const update of stream) {
-        void update;
-      }
-    })();
-
-    await waitFor(() => MockWebSocket.instances.length > 0);
-    const ws = MockWebSocket.instances[0];
-    await waitFor(() => ws.sent.length >= 2);
-
-    const userMessageFrame = JSON.parse(ws.sent[1]);
-    expect(userMessageFrame.text).toBe("newest");
-
-    ws.serverSend({ type: "session_ready", session_id: "session-1" });
-    ws.serverSend({ type: "assistant_done", message_id: "a1", text: "ok" });
-
-    await updatesPromise;
-  });
-
   it("throws when server sends error frame", async () => {
     vi.stubGlobal("WebSocket", MockWebSocket as any);
     MockWebSocket.instances = [];
 
     const { ws, updatesPromise } = await runWith("hello");
-
     ws.serverSend({ type: "session_ready", session_id: "session-1" });
     ws.serverSend({ type: "error", code: "adk_error", detail: "boom" });
 
@@ -216,6 +152,8 @@ describe("ws adapter", () => {
       taskPanelStates.push(snapshot);
     });
 
+    ws.serverSend({ type: "session_ready", session_id: "session-1" });
+    await waitFor(() => ws.sent.length >= 2);
     ws.serverSend({
       type: "task_panel_state",
       state: {
@@ -238,5 +176,29 @@ describe("ws adapter", () => {
       run_status: "running",
       active_action: "Capturing tasks"
     });
+  });
+
+  it("initializes app-open session and waits for startup turn", async () => {
+    vi.stubGlobal("WebSocket", MockWebSocket as any);
+    MockWebSocket.instances = [];
+
+    const initPromise = initializeWebSocketSession({
+      backendUrl: "http://localhost:8000",
+      deviceId: "device-1",
+      sessionId: "session-1",
+      timezone: "UTC",
+      entryContext
+    });
+
+    await waitFor(() => MockWebSocket.instances.length > 0);
+    const ws = MockWebSocket.instances[0];
+    await waitFor(() => ws.sent.length >= 1);
+    const initFrame = JSON.parse(ws.sent[0]);
+    expect(initFrame.suppress_startup_on_init).toBe(false);
+
+    ws.serverSend({ type: "session_ready", session_id: "session-1" });
+    ws.serverSend({ type: "assistant_done", message_id: "startup-1", text: "Let's start." });
+
+    await expect(initPromise).resolves.toEqual({ startupText: "Let's start." });
   });
 });

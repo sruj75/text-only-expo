@@ -12,7 +12,6 @@ import type {
 } from "../types/chat";
 
 type ChatFooterRailProps = {
-  actionError: string | null;
   keyboardOffset: number;
   panelMaxHeight: number;
   pendingActionKey: string | null;
@@ -26,7 +25,6 @@ type ChatFooterRailProps = {
 };
 
 export const ChatFooterRail = ({
-  actionError,
   keyboardOffset,
   panelMaxHeight,
   pendingActionKey,
@@ -65,7 +63,6 @@ export const ChatFooterRail = ({
         visibility={visibility}
         maxHeight={panelMaxHeight}
         pendingActionKey={pendingActionKey}
-        actionError={actionError}
         onClose={onClosePanel}
         onToggleTaskStatus={onToggleTaskStatus}
         onToggleTopEssential={onToggleTopEssential}

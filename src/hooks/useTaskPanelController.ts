@@ -88,17 +88,14 @@ export const useTaskPanelController = ({
 }: TaskPanelControllerArgs) => {
   const [state, dispatch] = useReducer(taskPanelReducer, initialTaskPanelState);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [actionError, setActionError] = useState<string | null>(null);
   const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
 
   const handleTaskPanelState = useCallback((snapshot: TaskPanelSnapshot) => {
-    setActionError(null);
     dispatch({ type: "snapshot_received", snapshot });
   }, []);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    setActionError(null);
 
     try {
       const nextSnapshot = await refreshTaskPanel({
@@ -112,9 +109,7 @@ export const useTaskPanelController = ({
         dispatch({ type: "snapshot_replaced", snapshot: nextSnapshot });
       }
     } catch (taskError) {
-      setActionError(
-        taskError instanceof Error ? taskError.message : "Could not refresh task workspace."
-      );
+      console.warn("Task panel refresh failed", taskError);
     } finally {
       setRefreshing(false);
     }
@@ -136,7 +131,6 @@ export const useTaskPanelController = ({
   const handleTaskStatusToggle = useCallback(async (task: TaskPanelTask) => {
     const actionKey = `status:${task.id}`;
     setPendingActionKey(actionKey);
-    setActionError(null);
 
     try {
       const nextSnapshot = await syncTaskStatus({
@@ -151,9 +145,7 @@ export const useTaskPanelController = ({
         dispatch({ type: "snapshot_replaced", snapshot: nextSnapshot });
       }
     } catch (taskError) {
-      setActionError(
-        taskError instanceof Error ? taskError.message : "Could not update task status."
-      );
+      console.warn("Task status update failed", taskError);
     } finally {
       setPendingActionKey((currentKey) => (currentKey === actionKey ? null : currentKey));
     }
@@ -162,7 +154,6 @@ export const useTaskPanelController = ({
   const handleTopEssentialToggle = useCallback(async (task: TaskPanelTask) => {
     const actionKey = `essential:${task.id}`;
     setPendingActionKey(actionKey);
-    setActionError(null);
 
     try {
       const nextSnapshot = await syncTopEssential({
@@ -178,9 +169,7 @@ export const useTaskPanelController = ({
         dispatch({ type: "snapshot_replaced", snapshot: nextSnapshot });
       }
     } catch (taskError) {
-      setActionError(
-        taskError instanceof Error ? taskError.message : "Could not update top essential."
-      );
+      console.warn("Top essential update failed", taskError);
     } finally {
       setPendingActionKey((currentKey) => (currentKey === actionKey ? null : currentKey));
     }
@@ -189,7 +178,6 @@ export const useTaskPanelController = ({
   return {
     taskPanelSnapshot: state.snapshot,
     taskPanelVisibility: state.visibility,
-    taskActionError: actionError,
     pendingTaskActionKey: pendingActionKey,
     handleClosePanel,
     handleTaskPanelState,

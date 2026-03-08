@@ -8,6 +8,7 @@ import {
 } from "@assistant-ui/react-native";
 import type { ThreadMessageLike } from "@assistant-ui/react-native";
 import {
+  AppState,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -43,7 +44,11 @@ import {
   parseTimeInput,
   type MotivationStyle
 } from "./src/lib/onboarding";
-import { createWebSocketChatAdapter } from "./src/lib/wsAdapter";
+import {
+  normalizeRealtimeIntent,
+  shouldResetVisibleConversation
+} from "./src/lib/sessionWindow";
+import { createWebSocketChatAdapter, initializeWebSocketSession } from "./src/lib/wsAdapter";
 import { useKeyboardOverlap } from "./src/hooks/useKeyboardOverlap";
 import { useTaskPanelController } from "./src/hooks/useTaskPanelController";
 import type {
@@ -54,7 +59,11 @@ import type {
   StoredMessage
 } from "./src/types/chat";
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+const rawBackendUrl = process.env.EXPO_PUBLIC_BACKEND_URL;
+if (!rawBackendUrl) {
+  throw new Error("EXPO_PUBLIC_BACKEND_URL is required.");
+}
+const BACKEND_URL: string = rawBackendUrl;
 
 const MANUAL_CONTEXT: EntryContext = {
   source: "manual",
@@ -133,17 +142,41 @@ const parsePlaybookNotes = (profileContext: ProfileContext | undefined): string 
   return typeof notes === "string" ? notes : "";
 };
 
+const buildStartupVisibleMessage = ({
+  sessionId,
+  deviceId,
+  entryContext,
+  startupText
+}: {
+  sessionId: string;
+  deviceId: string;
+  entryContext: EntryContext;
+  startupText: string | null;
+}): StoredMessage => {
+  const nowIso = new Date().toISOString();
+  const text = startupText && startupText.trim().length > 0 ? startupText.trim() : "Let's begin.";
+  return {
+    id: `visible-startup-${Date.now()}`,
+    session_id: sessionId,
+    user_id: deviceId,
+    role: "assistant",
+    content: text,
+    metadata: { startup_visible: true, entry_context: entryContext },
+    created_at: nowIso
+  };
+};
+
 type ChatPaneProps = {
   backendUrl: string;
   deviceId: string;
   timezone: string;
   sessionId: string;
+  visibleConversationKey: string;
   messages: StoredMessage[];
   entryContext: EntryContext;
 };
 
 type OnboardingScreenProps = {
-  error: string | null;
   onboardingWakeTime: string;
   onboardingBedtime: string;
   onboardingStruggles: string;
@@ -161,7 +194,6 @@ type OnboardingScreenProps = {
 };
 
 const OnboardingScreen = ({
-  error,
   onboardingWakeTime,
   onboardingBedtime,
   onboardingStruggles,
@@ -189,8 +221,6 @@ const OnboardingScreen = ({
             Finish this once, then you land in the main chat and thread screen.
           </Text>
         </View>
-
-        {error ? <Text style={styles.authError}>{error}</Text> : null}
 
         <View style={styles.authCard}>
           <KeyboardAvoidingView
@@ -352,6 +382,7 @@ const ChatPane = ({
   deviceId,
   timezone,
   sessionId,
+  visibleConversationKey,
   messages,
   entryContext
 }: ChatPaneProps) => {
@@ -363,7 +394,6 @@ const ChatPane = ({
   const {
     taskPanelSnapshot,
     taskPanelVisibility,
-    taskActionError,
     pendingTaskActionKey,
     handleClosePanel,
     handleTaskPanelState,
@@ -397,7 +427,7 @@ const ChatPane = ({
   const runtime = useLocalRuntime(chatModel, {
     initialMessages: toThreadMessages(messages),
     storage: AsyncStorage,
-    storagePrefix: `intentive:${sessionId}`
+    storagePrefix: `intentive:${sessionId}:${visibleConversationKey}`
   });
   const taskPanelMaxHeight = Math.max(
     0,
@@ -448,7 +478,6 @@ const ChatPane = ({
           />
 
           <ChatFooterRail
-            actionError={taskActionError}
             keyboardOffset={keyboardOffset}
             panelMaxHeight={taskPanelMaxHeight}
             pendingActionKey={pendingTaskActionKey}
@@ -475,9 +504,9 @@ export default function App() {
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [timezone, setTimezone] = useState<string>("UTC");
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
-  const [threadMessages, setThreadMessages] = useState<Record<string, StoredMessage[]>>({});
+  const [visibleConversationKey, setVisibleConversationKey] = useState<string | null>(null);
+  const [visibleMessages, setVisibleMessages] = useState<StoredMessage[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
   const [pendingEntryIntent, setPendingEntryIntent] = useState<EntryIntent | null>(null);
   const [entryContext, setEntryContext] = useState<EntryContext>(MANUAL_CONTEXT);
   const [needsOnboarding, setNeedsOnboarding] = useState<boolean>(false);
@@ -489,14 +518,52 @@ export default function App() {
   const [onboardingMotivationStyle, setOnboardingMotivationStyle] =
     useState<MotivationStyle>("supportive");
   const [onboardingSaving, setOnboardingSaving] = useState<boolean>(false);
+  const appStateRef = useRef(AppState.currentState);
+  const lastBackgroundAtRef = useRef<number | null>(null);
+
+  const startFreshVisibleChat = useCallback(
+    async (
+      currentDeviceId: string,
+      currentTimezone: string,
+      sessionId: string,
+      nextEntryContext: EntryContext
+    ) => {
+      let startupText: string | null = null;
+      try {
+        const startup = await initializeWebSocketSession({
+          backendUrl: BACKEND_URL,
+          deviceId: currentDeviceId,
+          sessionId,
+          timezone: currentTimezone,
+          entryContext: nextEntryContext
+        });
+        startupText = startup.startupText;
+      } catch (startupError) {
+        console.warn("Session startup init failed", startupError);
+      }
+
+      setVisibleConversationKey(`${sessionId}:${Date.now()}`);
+      setVisibleMessages([
+        buildStartupVisibleMessage({
+          sessionId,
+          deviceId: currentDeviceId,
+          entryContext: nextEntryContext,
+          startupText
+        })
+      ]);
+      setEntryContext(nextEntryContext);
+    },
+    []
+  );
 
   const loadBootstrap = useCallback(
     async (currentDeviceId: string, currentTimezone: string, intent: EntryIntent | null) => {
+      const resolvedEntryContext = intent?.entry_context || MANUAL_CONTEXT;
       const payload = {
         device_id: currentDeviceId,
         timezone: currentTimezone,
         session_id: intent?.session_id,
-        entry_context: intent?.entry_context
+        entry_context: resolvedEntryContext
       };
 
       const response: BootstrapResponse = await bootstrapDevice(BACKEND_URL, payload);
@@ -509,21 +576,20 @@ export default function App() {
         });
 
         setActiveThreadId(createdThread.session_id);
-        setThreadMessages((prev) => ({
-          ...prev,
-          [createdThread.session_id]: []
-        }));
         setNeedsOnboarding(Boolean(response.needs_onboarding));
         setProfileContext(response.profile_context || DEFAULT_PROFILE_CONTEXT);
-        setEntryContext(intent?.entry_context || MANUAL_CONTEXT);
+        if (!response.needs_onboarding) {
+          await startFreshVisibleChat(
+            currentDeviceId,
+            currentTimezone,
+            createdThread.session_id,
+            resolvedEntryContext
+          );
+        }
         return;
       }
 
       setActiveThreadId(resolvedSessionId);
-      setThreadMessages((prev) => ({
-        ...prev,
-        [resolvedSessionId]: response.messages
-      }));
       setNeedsOnboarding(Boolean(response.needs_onboarding));
       setProfileContext(response.profile_context || DEFAULT_PROFILE_CONTEXT);
       if (response.needs_onboarding) {
@@ -533,13 +599,20 @@ export default function App() {
         const playbookSummary = parsePlaybookSummary(notes);
         setOnboardingWakeTime((prev) => prev || wake);
         setOnboardingBedtime((prev) => prev || bed);
-      setOnboardingStruggles((prev) => prev || playbookSummary.struggles || "");
-      setOnboardingGoals((prev) => prev || playbookSummary.goals || "");
-      setOnboardingMotivationStyle((prev) => playbookSummary.motivationStyle || prev);
+        setOnboardingStruggles((prev) => prev || playbookSummary.struggles || "");
+        setOnboardingGoals((prev) => prev || playbookSummary.goals || "");
+        setOnboardingMotivationStyle((prev) => playbookSummary.motivationStyle || prev);
+        setEntryContext(MANUAL_CONTEXT);
+        return;
       }
-      setEntryContext(intent?.entry_context || MANUAL_CONTEXT);
+      await startFreshVisibleChat(
+        currentDeviceId,
+        currentTimezone,
+        resolvedSessionId,
+        resolvedEntryContext
+      );
     },
-    []
+    [startFreshVisibleChat]
   );
 
   const syncPushToken = useCallback(async (currentDeviceId: string, currentTimezone: string) => {
@@ -592,9 +665,7 @@ export default function App() {
           console.warn("Push token sync failed", tokenError);
         });
       } catch (setupError) {
-        if (!cancelled) {
-          setError(setupError instanceof Error ? setupError.message : "Failed to start app");
-        }
+        console.warn("Failed to start app", setupError);
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -613,7 +684,7 @@ export default function App() {
       const payload = response.notification.request.content.data as Record<string, unknown>;
       const intent = parseEntryIntentFromData(payload);
       if (intent) {
-        setPendingEntryIntent(intent);
+        setPendingEntryIntent(normalizeRealtimeIntent(intent));
       }
     });
 
@@ -622,14 +693,14 @@ export default function App() {
       const payload = response.notification.request.content.data as Record<string, unknown>;
       const intent = parseEntryIntentFromData(payload);
       if (intent) {
-        setPendingEntryIntent(intent);
+        setPendingEntryIntent(normalizeRealtimeIntent(intent));
       }
     });
 
     const urlSub = Linking.addEventListener("url", ({ url }) => {
       const intent = parseEntryIntentFromUrl(url);
       if (intent) {
-        setPendingEntryIntent(intent);
+        setPendingEntryIntent(normalizeRealtimeIntent(intent));
       }
     });
 
@@ -637,7 +708,7 @@ export default function App() {
       if (!url) return;
       const intent = parseEntryIntentFromUrl(url);
       if (intent) {
-        setPendingEntryIntent(intent);
+        setPendingEntryIntent(normalizeRealtimeIntent(intent));
       }
     });
 
@@ -651,16 +722,46 @@ export default function App() {
     if (!pendingEntryIntent || !deviceId) return;
     void loadBootstrap(deviceId, timezone, pendingEntryIntent)
       .catch((bootstrapError) => {
-        setError(
-          bootstrapError instanceof Error
-            ? bootstrapError.message
-            : "Failed to process entry intent"
-        );
+        console.warn("Failed to process entry intent", bootstrapError);
       })
       .finally(() => {
         setPendingEntryIntent(null);
       });
   }, [deviceId, loadBootstrap, pendingEntryIntent, timezone]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+
+      if (previousState === "active" && (nextState === "inactive" || nextState === "background")) {
+        lastBackgroundAtRef.current = Date.now();
+        return;
+      }
+
+      if (
+        (previousState === "inactive" || previousState === "background") &&
+        nextState === "active" &&
+        deviceId
+      ) {
+        const backgroundAt = lastBackgroundAtRef.current;
+        if (!backgroundAt) {
+          return;
+        }
+        const awayForMs = Date.now() - backgroundAt;
+        if (!shouldResetVisibleConversation(awayForMs)) {
+          return;
+        }
+        void loadBootstrap(deviceId, timezone, null).catch((error) => {
+          console.warn("Failed to refresh conversation on foreground", error);
+        });
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [deviceId, loadBootstrap, timezone]);
 
   const normalizedWakeTime = useMemo(
     () => parseTimeInput(onboardingWakeTime),
@@ -685,7 +786,6 @@ export default function App() {
     const bedtime = parseTimeInput(onboardingBedtime);
     if (!wakeTime || !bedtime) return;
 
-    setError(null);
     setOnboardingSaving(true);
     try {
       const response = await completeOnboarding(BACKEND_URL, {
@@ -706,13 +806,18 @@ export default function App() {
       });
       setNeedsOnboarding(Boolean(response.needs_onboarding));
       setProfileContext(response.profile_context || DEFAULT_PROFILE_CONTEXT);
-      await loadBootstrap(deviceId, timezone, null);
+      await loadBootstrap(deviceId, timezone, {
+        entry_context: {
+          source: "manual",
+          event_id: null,
+          trigger_type: "post_onboarding",
+          scheduled_time: null,
+          calendar_event_id: null,
+          entry_mode: "proactive"
+        }
+      });
     } catch (onboardingError) {
-      setError(
-        onboardingError instanceof Error
-          ? onboardingError.message
-          : "Failed to complete onboarding"
-      );
+      console.warn("Failed to complete onboarding", onboardingError);
     } finally {
       setOnboardingSaving(false);
     }
@@ -729,8 +834,7 @@ export default function App() {
     timezone
   ]);
 
-  const activeMessages =
-    (activeThreadId && threadMessages[activeThreadId]) || [];
+  const activeMessages = visibleMessages;
 
   if (loading) {
     return (
@@ -741,7 +845,6 @@ export default function App() {
           <Text style={styles.centeredSubtitle}>
             Loading your device and chat context.
           </Text>
-          {error ? <Text style={styles.authError}>{error}</Text> : null}
         </View>
       </SafeAreaView>
     );
@@ -750,7 +853,6 @@ export default function App() {
   if (needsOnboarding) {
     return (
       <OnboardingScreen
-        error={error}
         onboardingWakeTime={onboardingWakeTime}
         onboardingBedtime={onboardingBedtime}
         onboardingStruggles={onboardingStruggles}
@@ -775,10 +877,9 @@ export default function App() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f3f5f7" />
 
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
       <View style={styles.content}>
         <View style={styles.chatPane}>
-          {!deviceId || !activeThreadId ? (
+          {!deviceId || !activeThreadId || !visibleConversationKey ? (
             <View style={styles.centeredState}>
               <Text style={styles.centeredTitle}>Preparing your chat</Text>
               <Text style={styles.centeredSubtitle}>
@@ -787,11 +888,12 @@ export default function App() {
             </View>
           ) : (
             <ChatPane
-              key={activeThreadId}
+              key={visibleConversationKey}
               backendUrl={BACKEND_URL}
               deviceId={deviceId}
               timezone={timezone}
               sessionId={activeThreadId}
+              visibleConversationKey={visibleConversationKey}
               messages={activeMessages}
               entryContext={entryContext}
             />
@@ -849,16 +951,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22
   },
-  authError: {
-    width: "100%",
-    maxWidth: 720,
-    color: "#b42318",
-    backgroundColor: "#fee4e2",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12
-  },
   authCard: {
     width: "100%",
     maxWidth: 720,
@@ -869,15 +961,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#d8e0ea",
     overflow: "hidden"
-  },
-  errorText: {
-    color: "#b42318",
-    backgroundColor: "#fee4e2",
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10
   },
   content: {
     flex: 1,
