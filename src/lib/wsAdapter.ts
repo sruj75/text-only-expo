@@ -181,7 +181,6 @@ export const createWebSocketChatAdapter = (
 
       const wsUrl = toWsUrl(config.backendUrl, {
         device_id: config.deviceId,
-        session_id: config.sessionId,
         timezone: config.timezone,
       });
 

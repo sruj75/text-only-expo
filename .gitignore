@@ -39,6 +39,7 @@ pnpm-debug.log*
 .idea/
 .vscode/
 .DS_Store
+**/.DS_Store
 
 # npm lockfile (ignored by request)
 package-lock.json
