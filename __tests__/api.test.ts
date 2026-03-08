@@ -6,6 +6,7 @@ import {
   createThread,
   fetchThreadMessages,
   fetchThreads,
+  openSession,
   registerPushToken,
   taskManagementAction
 } from "../src/lib/api";
@@ -141,6 +142,48 @@ describe("api client", () => {
       bedtime: "23:30",
       playbook: "Help me start tiny when I am stuck",
       health_anchors: ["Breakfast", "Walk"]
+    });
+  });
+
+  it("opens session with durable startup contract", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ session_id: "s-open", messages_delta: [], message_cursor: null })
+    });
+
+    await openSession("http://localhost:8000", {
+      device_id: "device-12",
+      timezone: "UTC",
+      session_id: "session-12",
+      entry_context: {
+        source: "manual",
+        event_id: null,
+        trigger_type: null,
+        scheduled_time: null,
+        calendar_event_id: null,
+        entry_mode: "reactive"
+      },
+      source: "manual",
+      cursor: null
+    });
+
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:8000/agent/session/open");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      device_id: "device-12",
+      timezone: "UTC",
+      session_id: "session-12",
+      entry_context: {
+        source: "manual",
+        event_id: null,
+        trigger_type: null,
+        scheduled_time: null,
+        calendar_event_id: null,
+        entry_mode: "reactive"
+      },
+      source: "manual",
+      cursor: null
     });
   });
 

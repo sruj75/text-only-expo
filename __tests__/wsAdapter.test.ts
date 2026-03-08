@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createWebSocketChatAdapter, initializeWebSocketSession } from "../src/lib/wsAdapter";
+import { createWebSocketChatAdapter } from "../src/lib/wsAdapter";
 import type { EntryContext, TaskPanelSnapshot } from "../src/types/chat";
 
 class MockWebSocket {
@@ -57,7 +57,8 @@ const entryContext: EntryContext = {
 
 const runWith = async (
   userText: string,
-  onTaskPanelState?: (snapshot: TaskPanelSnapshot) => void
+  onTaskPanelState?: (snapshot: TaskPanelSnapshot) => void,
+  cursor: string | null = "cursor-0"
 ) => {
   const adapter = createWebSocketChatAdapter({
     backendUrl: "http://localhost:8000",
@@ -65,6 +66,7 @@ const runWith = async (
     sessionId: "session-1",
     timezone: "Asia/Kolkata",
     getEntryContext: () => entryContext,
+    getCursor: () => cursor,
     onTaskPanelState
   });
 
@@ -113,7 +115,7 @@ describe("ws adapter", () => {
       type: "init",
       device_id: "device-1",
       session_id: "session-1",
-      suppress_startup_on_init: true
+      cursor: "cursor-0"
     });
     expect(ws.sent).toHaveLength(1);
 
@@ -178,27 +180,18 @@ describe("ws adapter", () => {
     });
   });
 
-  it("initializes app-open session and waits for startup turn", async () => {
+  it("supports null cursor on websocket init", async () => {
     vi.stubGlobal("WebSocket", MockWebSocket as any);
     MockWebSocket.instances = [];
 
-    const initPromise = initializeWebSocketSession({
-      backendUrl: "http://localhost:8000",
-      deviceId: "device-1",
-      sessionId: "session-1",
-      timezone: "UTC",
-      entryContext
-    });
+    const { ws, updatesPromise } = await runWith("hello", undefined, null);
 
-    await waitFor(() => MockWebSocket.instances.length > 0);
-    const ws = MockWebSocket.instances[0];
-    await waitFor(() => ws.sent.length >= 1);
     const initFrame = JSON.parse(ws.sent[0]);
-    expect(initFrame.suppress_startup_on_init).toBe(false);
+    expect(initFrame.cursor).toBeNull();
 
-    ws.serverSend({ type: "session_ready", session_id: "session-1" });
-    ws.serverSend({ type: "assistant_done", message_id: "startup-1", text: "Let's start." });
+    ws.serverSend({ type: "session_ready", session_id: "session-1", cursor: "cursor-1" });
+    ws.serverSend({ type: "assistant_done", message_id: "a1", text: "Done" });
 
-    await expect(initPromise).resolves.toEqual({ startupText: "Let's start." });
+    await updatesPromise;
   });
 });

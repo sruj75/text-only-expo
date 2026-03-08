@@ -13,15 +13,7 @@ type AdapterConfig = {
   sessionId: string;
   timezone: string;
   getEntryContext: () => EntryContext | null;
-  onTaskPanelState?: (snapshot: TaskPanelSnapshot) => void;
-};
-
-type SessionInitConfig = {
-  backendUrl: string;
-  deviceId: string;
-  sessionId: string;
-  timezone: string;
-  entryContext: EntryContext | null;
+  getCursor: () => string | null;
   onTaskPanelState?: (snapshot: TaskPanelSnapshot) => void;
 };
 
@@ -29,7 +21,8 @@ type WsServerFrame =
   | {
       type: "session_ready";
       session_id: string;
-      messages?: unknown[];
+      cursor?: string | null;
+      history_delta?: unknown[];
     }
   | {
       type: "assistant_delta";
@@ -176,69 +169,6 @@ const openSocket = (wsUrl: string) => {
   return { socket, opened, ...transport };
 };
 
-export const initializeWebSocketSession = async ({
-  backendUrl,
-  deviceId,
-  sessionId,
-  timezone,
-  entryContext,
-  onTaskPanelState,
-}: SessionInitConfig): Promise<{ startupText: string | null }> => {
-  const wsUrl = toWsUrl(backendUrl, {
-    device_id: deviceId,
-    session_id: sessionId,
-    timezone,
-    entry_mode: entryContext?.entry_mode ?? "reactive",
-  });
-  const { socket, opened, consumeFrame } = openSocket(wsUrl);
-
-  try {
-    await opened;
-    socket.send(
-      JSON.stringify({
-        type: "init",
-        device_id: deviceId,
-        session_id: sessionId,
-        timezone,
-        entry_context: entryContext,
-        suppress_startup_on_init: false,
-      }),
-    );
-
-    let sessionReady = false;
-    while (!sessionReady) {
-      const frame = await consumeFrame();
-      if (frame.type === "session_ready") {
-        sessionReady = true;
-        continue;
-      }
-      if (frame.type === "task_panel_state") {
-        onTaskPanelState?.(normalizeTaskPanelSnapshot(frame.state));
-        continue;
-      }
-      if (frame.type === "error") {
-        throw new Error(frame.detail ?? frame.code ?? "Server error");
-      }
-    }
-
-    while (true) {
-      const frame = await consumeFrame();
-      if (frame.type === "assistant_done") {
-        return { startupText: frame.text };
-      }
-      if (frame.type === "task_panel_state") {
-        onTaskPanelState?.(normalizeTaskPanelSnapshot(frame.state));
-        continue;
-      }
-      if (frame.type === "error") {
-        throw new Error(frame.detail ?? frame.code ?? "Server error");
-      }
-    }
-  } finally {
-    socket.close();
-  }
-};
-
 export const createWebSocketChatAdapter = (
   config: AdapterConfig,
 ): ChatModelAdapter => {
@@ -278,7 +208,7 @@ export const createWebSocketChatAdapter = (
             session_id: config.sessionId,
             timezone: config.timezone,
             entry_context: config.getEntryContext(),
-            suppress_startup_on_init: true,
+            cursor: config.getCursor(),
           }),
         );
 

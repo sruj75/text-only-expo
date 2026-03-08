@@ -2,6 +2,7 @@ import type {
   BootstrapResponse,
   EntryContext,
   ProfileContext,
+  SessionOpenResponse,
   StoredMessage,
   ThreadSummary,
 } from "../types/chat";
@@ -32,6 +33,15 @@ type CompleteOnboardingPayload = {
   bedtime: string;
   playbook: string;
   health_anchors: string[];
+};
+
+type SessionOpenPayload = {
+  device_id: string;
+  timezone: string;
+  session_id?: string;
+  entry_context?: EntryContext;
+  source: "manual" | "push";
+  cursor?: string | null;
 };
 
 export type TaskManagementAction =
@@ -99,11 +109,21 @@ export const fetchThreadMessages = async (
   sessionId: string,
   deviceId: string,
 ): Promise<StoredMessage[]> => {
-  const result = await request<{ messages: StoredMessage[] }>(
+  const result = await request<{ cursor?: string | null; messages: StoredMessage[] }>(
     baseUrl,
     `/agent/threads/${encodeURIComponent(sessionId)}/messages?device_id=${encodeURIComponent(deviceId)}`,
   );
   return result.messages;
+};
+
+export const openSession = async (
+  baseUrl: string,
+  payload: SessionOpenPayload,
+): Promise<SessionOpenResponse> => {
+  return request<SessionOpenResponse>(baseUrl, "/agent/session/open", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 };
 
 export const createThread = async (
