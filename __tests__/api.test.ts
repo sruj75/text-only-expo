@@ -1,11 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  bootstrapDevice,
   completeOnboarding,
-  createThread,
-  fetchThreadMessages,
-  fetchThreads,
   openSession,
   registerPushToken,
   taskManagementAction
@@ -20,69 +16,6 @@ describe("api client", () => {
     mockFetch.mockReset();
   });
 
-  it("bootstraps device with expected payload", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ session_id: "s1" })
-    });
-
-    await bootstrapDevice("http://localhost:8000/", {
-      device_id: "device-1",
-      timezone: "Asia/Kolkata"
-    });
-
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://localhost:8000/agent/bootstrap-device");
-    expect(init.method).toBe("POST");
-    expect(JSON.parse(String(init.body))).toEqual({
-      device_id: "device-1",
-      timezone: "Asia/Kolkata"
-    });
-  });
-
-  it("fetches thread list", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ threads: [{ session_id: "s-1" }] })
-    });
-
-    const result = await fetchThreads("http://localhost:8000", "device-2");
-
-    expect(result).toEqual([{ session_id: "s-1" }]);
-    expect(mockFetch.mock.calls[0][0]).toBe(
-      "http://localhost:8000/agent/threads?device_id=device-2"
-    );
-  });
-
-  it("encodes session id when fetching messages", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ messages: [] })
-    });
-
-    await fetchThreadMessages("http://localhost:8000", "session/with/slash", "d3");
-
-    expect(mockFetch.mock.calls[0][0]).toBe(
-      "http://localhost:8000/agent/threads/session%2Fwith%2Fslash/messages?device_id=d3"
-    );
-  });
-
-  it("creates a new thread", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ thread: { session_id: "manual-1" } })
-    });
-
-    const result = await createThread("http://localhost:8000", {
-      device_id: "d4",
-      timezone: "UTC",
-      title: "My thread"
-    });
-
-    expect(result).toEqual({ session_id: "manual-1" });
-  });
-
   it("throws clear error when backend returns non-2xx", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
@@ -90,7 +23,11 @@ describe("api client", () => {
       text: async () => "service down"
     });
 
-    await expect(fetchThreads("http://localhost:8000", "d5")).rejects.toThrow(
+    await expect(openSession("http://localhost:8000", {
+      device_id: "d5",
+      timezone: "UTC",
+      source: "manual"
+    })).rejects.toThrow(
       "Request failed (503): service down"
     );
   });

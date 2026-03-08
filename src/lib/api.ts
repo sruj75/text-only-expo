@@ -1,24 +1,8 @@
 import type {
-  BootstrapResponse,
   EntryContext,
   ProfileContext,
   SessionOpenResponse,
-  StoredMessage,
-  ThreadSummary,
 } from "../types/chat";
-
-type BootstrapPayload = {
-  device_id: string;
-  timezone: string;
-  session_id?: string;
-  entry_context?: EntryContext;
-};
-
-type CreateThreadPayload = {
-  device_id: string;
-  timezone: string;
-  title?: string;
-};
 
 type PushTokenPayload = {
   device_id: string;
@@ -83,39 +67,6 @@ const request = async <T>(
   return (await response.json()) as T;
 };
 
-export const bootstrapDevice = async (
-  baseUrl: string,
-  payload: BootstrapPayload,
-): Promise<BootstrapResponse> => {
-  return request<BootstrapResponse>(baseUrl, "/agent/bootstrap-device", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-};
-
-export const fetchThreads = async (
-  baseUrl: string,
-  deviceId: string,
-): Promise<ThreadSummary[]> => {
-  const result = await request<{ threads: ThreadSummary[] }>(
-    baseUrl,
-    `/agent/threads?device_id=${encodeURIComponent(deviceId)}`,
-  );
-  return result.threads;
-};
-
-export const fetchThreadMessages = async (
-  baseUrl: string,
-  sessionId: string,
-  deviceId: string,
-): Promise<StoredMessage[]> => {
-  const result = await request<{ cursor?: string | null; messages: StoredMessage[] }>(
-    baseUrl,
-    `/agent/threads/${encodeURIComponent(sessionId)}/messages?device_id=${encodeURIComponent(deviceId)}`,
-  );
-  return result.messages;
-};
-
 export const openSession = async (
   baseUrl: string,
   payload: SessionOpenPayload,
@@ -124,17 +75,6 @@ export const openSession = async (
     method: "POST",
     body: JSON.stringify(payload),
   });
-};
-
-export const createThread = async (
-  baseUrl: string,
-  payload: CreateThreadPayload,
-): Promise<ThreadSummary> => {
-  const result = await request<{ thread: ThreadSummary }>(baseUrl, "/agent/threads", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-  return result.thread;
 };
 
 export const registerPushToken = async (

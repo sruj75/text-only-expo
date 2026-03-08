@@ -5,14 +5,13 @@ import type {
 } from "@assistant-ui/react-native";
 
 import { normalizeTaskPanelSnapshot } from "./taskPanel";
-import type { EntryContext, TaskPanelSnapshot } from "../types/chat";
+import type { TaskPanelSnapshot } from "../types/chat";
 
 type AdapterConfig = {
   backendUrl: string;
   deviceId: string;
   sessionId: string;
   timezone: string;
-  getEntryContext: () => EntryContext | null;
   getCursor: () => string | null;
   onTaskPanelState?: (snapshot: TaskPanelSnapshot) => void;
 };
@@ -187,7 +186,6 @@ export const createWebSocketChatAdapter = (
         device_id: config.deviceId,
         session_id: config.sessionId,
         timezone: config.timezone,
-        entry_mode: config.getEntryContext()?.entry_mode ?? "reactive",
       });
 
       const { socket, opened, consumeFrame, failFrameStream } = openSocket(wsUrl);
@@ -204,10 +202,7 @@ export const createWebSocketChatAdapter = (
         socket.send(
           JSON.stringify({
             type: "init",
-            device_id: config.deviceId,
             session_id: config.sessionId,
-            timezone: config.timezone,
-            entry_context: config.getEntryContext(),
             cursor: config.getCursor(),
           }),
         );

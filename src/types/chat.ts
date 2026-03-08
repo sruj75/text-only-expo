@@ -73,25 +73,6 @@ export type StoredMessage = {
   created_at: string;
 };
 
-export type ThreadSummary = {
-  session_id: string;
-  date: string;
-  title: string;
-  updated_at: string;
-  state: Record<string, unknown>;
-};
-
-export type BootstrapResponse = {
-  device_id: string;
-  user_id: string;
-  timezone: string;
-  session_id: string;
-  threads: ThreadSummary[];
-  messages: StoredMessage[];
-  needs_onboarding: boolean;
-  profile_context: ProfileContext;
-};
-
 export type SessionOpenResponse = {
   session_id: string;
   message_cursor: string | null;

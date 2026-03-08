@@ -54,6 +54,7 @@ import type {
   EntryContext,
   EntryIntent,
   ProfileContext,
+  SessionOpenResponse,
   StoredMessage
 } from "./src/types/chat";
 
@@ -148,7 +149,6 @@ type ChatPaneProps = {
   visibleConversationKey: string;
   messages: StoredMessage[];
   messageCursor: string | null;
-  entryContext: EntryContext;
 };
 
 type OnboardingScreenProps = {
@@ -359,11 +359,9 @@ const ChatPane = ({
   sessionId,
   visibleConversationKey,
   messages,
-  messageCursor,
-  entryContext
+  messageCursor
 }: ChatPaneProps) => {
   const taskPanelTopGap = 16;
-  const entryContextRef = useRef<EntryContext>(entryContext);
   const [chatShellHeight, setChatShellHeight] = useState<number>(0);
   const [composerHeight, setComposerHeight] = useState<number>(54);
   const { containerRef, handleContainerLayout, keyboardOffset } = useKeyboardOverlap();
@@ -383,10 +381,6 @@ const ChatPane = ({
     sessionId
   });
 
-  useEffect(() => {
-    entryContextRef.current = entryContext;
-  }, [entryContext]);
-
   const chatModel = useMemo(
     () =>
       createWebSocketChatAdapter({
@@ -394,7 +388,6 @@ const ChatPane = ({
         deviceId,
         sessionId,
         timezone,
-        getEntryContext: () => entryContextRef.current,
         getCursor: () => messageCursor,
         onTaskPanelState: handleTaskPanelState
       }),
@@ -486,7 +479,7 @@ export default function App() {
   const [sessionCursor, setSessionCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [pendingEntryIntent, setPendingEntryIntent] = useState<EntryIntent | null>(null);
-  const [entryContext, setEntryContext] = useState<EntryContext>(MANUAL_CONTEXT);
+  const [, setEntryContext] = useState<EntryContext>(MANUAL_CONTEXT);
   const [needsOnboarding, setNeedsOnboarding] = useState<boolean>(false);
   const [profileContext, setProfileContext] = useState<ProfileContext>(DEFAULT_PROFILE_CONTEXT);
   const [onboardingWakeTime, setOnboardingWakeTime] = useState<string>("");
@@ -498,23 +491,30 @@ export default function App() {
   const [onboardingSaving, setOnboardingSaving] = useState<boolean>(false);
   const appStateRef = useRef(AppState.currentState);
   const lastBackgroundAtRef = useRef<number | null>(null);
+  const sessionRequestTokenRef = useRef<number>(0);
+  const staleSessionFallbackRef = useRef<{
+    token: number;
+    opened: SessionOpenResponse;
+    resolvedEntryContext: EntryContext;
+  } | null>(null);
 
-  const loadSession = useCallback(
-    async (currentDeviceId: string, currentTimezone: string, intent: EntryIntent | null) => {
-      const resolvedEntryContext = intent?.entry_context || MANUAL_CONTEXT;
-      const opened = await openSession(BACKEND_URL, {
-        device_id: currentDeviceId,
-        timezone: currentTimezone,
-        session_id: intent?.session_id,
-        entry_context: resolvedEntryContext,
-        source: resolvedEntryContext.source,
-        cursor: null
-      });
+  const applyOpenedSession = useCallback(
+    (opened: SessionOpenResponse, resolvedEntryContext: EntryContext) => {
+      const nextNeedsOnboarding = Boolean(opened.needs_onboarding);
+      const nextEntryContext = nextNeedsOnboarding ? MANUAL_CONTEXT : resolvedEntryContext;
+      const nextMessages = nextNeedsOnboarding ? [] : opened.messages_delta || [];
+      const nextCursor = nextNeedsOnboarding ? null : opened.message_cursor || null;
+      const nextConversationKey = nextNeedsOnboarding ? null : `${opened.session_id}:${Date.now()}`;
 
       setActiveThreadId(opened.session_id);
-      setNeedsOnboarding(Boolean(opened.needs_onboarding));
+      setVisibleMessages(nextMessages);
+      setSessionCursor(nextCursor);
+      setEntryContext(nextEntryContext);
+      setNeedsOnboarding(nextNeedsOnboarding);
       setProfileContext(opened.profile_context || DEFAULT_PROFILE_CONTEXT);
-      if (opened.needs_onboarding) {
+      setVisibleConversationKey(nextConversationKey);
+
+      if (nextNeedsOnboarding) {
         const wake = formatTimeForDisplay(opened.profile_context?.wake_time);
         const bed = formatTimeForDisplay(opened.profile_context?.bedtime);
         const notes = parsePlaybookNotes(opened.profile_context);
@@ -524,18 +524,51 @@ export default function App() {
         setOnboardingStruggles((prev) => prev || playbookSummary.struggles || "");
         setOnboardingGoals((prev) => prev || playbookSummary.goals || "");
         setOnboardingMotivationStyle((prev) => playbookSummary.motivationStyle || prev);
-        setVisibleConversationKey(null);
-        setVisibleMessages([]);
-        setSessionCursor(null);
-        setEntryContext(MANUAL_CONTEXT);
-        return;
       }
-      setVisibleConversationKey(`${opened.session_id}:${Date.now()}`);
-      setVisibleMessages(opened.messages_delta || []);
-      setSessionCursor(opened.message_cursor || null);
-      setEntryContext(resolvedEntryContext);
     },
     []
+  );
+
+  const openAndApplySession = useCallback(
+    async (currentDeviceId: string, currentTimezone: string, intent: EntryIntent | null) => {
+      const requestToken = sessionRequestTokenRef.current + 1;
+      sessionRequestTokenRef.current = requestToken;
+      const resolvedEntryContext = intent?.entry_context || MANUAL_CONTEXT;
+      try {
+        const opened = await openSession(BACKEND_URL, {
+          device_id: currentDeviceId,
+          timezone: currentTimezone,
+          session_id: intent?.session_id,
+          entry_context: resolvedEntryContext,
+          source: resolvedEntryContext.source,
+          cursor: null
+        });
+
+        if (requestToken !== sessionRequestTokenRef.current) {
+          const previousFallback = staleSessionFallbackRef.current;
+          if (!previousFallback || previousFallback.token < requestToken) {
+            staleSessionFallbackRef.current = {
+              token: requestToken,
+              opened,
+              resolvedEntryContext
+            };
+          }
+          return;
+        }
+
+        staleSessionFallbackRef.current = null;
+        applyOpenedSession(opened, resolvedEntryContext);
+      } catch (error) {
+        if (requestToken === sessionRequestTokenRef.current && staleSessionFallbackRef.current) {
+          const fallback = staleSessionFallbackRef.current;
+          staleSessionFallbackRef.current = null;
+          applyOpenedSession(fallback.opened, fallback.resolvedEntryContext);
+          return;
+        }
+        throw error;
+      }
+    },
+    [applyOpenedSession]
   );
 
   const syncPushToken = useCallback(async (currentDeviceId: string, currentTimezone: string) => {
@@ -583,7 +616,7 @@ export default function App() {
 
         setTimezone(nextTimezone);
         setDeviceId(nextDeviceId);
-        await loadSession(nextDeviceId, nextTimezone, null);
+        await openAndApplySession(nextDeviceId, nextTimezone, null);
         void syncPushToken(nextDeviceId, nextTimezone).catch((tokenError) => {
           console.warn("Push token sync failed", tokenError);
         });
@@ -600,7 +633,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [loadSession, syncPushToken]);
+  }, [openAndApplySession, syncPushToken]);
 
   useEffect(() => {
     const notificationSub = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -643,14 +676,14 @@ export default function App() {
 
   useEffect(() => {
     if (!pendingEntryIntent || !deviceId) return;
-    void loadSession(deviceId, timezone, pendingEntryIntent)
+    void openAndApplySession(deviceId, timezone, pendingEntryIntent)
       .catch((bootstrapError) => {
         console.warn("Failed to process entry intent", bootstrapError);
       })
       .finally(() => {
         setPendingEntryIntent(null);
       });
-  }, [deviceId, loadSession, pendingEntryIntent, timezone]);
+  }, [deviceId, openAndApplySession, pendingEntryIntent, timezone]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
@@ -675,7 +708,7 @@ export default function App() {
         if (!shouldResetVisibleConversation(awayForMs)) {
           return;
         }
-        void loadSession(deviceId, timezone, null).catch((error) => {
+        void openAndApplySession(deviceId, timezone, null).catch((error) => {
           console.warn("Failed to refresh conversation on foreground", error);
         });
       }
@@ -684,7 +717,7 @@ export default function App() {
     return () => {
       subscription.remove();
     };
-  }, [deviceId, loadSession, timezone]);
+  }, [deviceId, openAndApplySession, timezone]);
 
   const normalizedWakeTime = useMemo(
     () => parseTimeInput(onboardingWakeTime),
@@ -711,7 +744,7 @@ export default function App() {
 
     setOnboardingSaving(true);
     try {
-      const response = await completeOnboarding(BACKEND_URL, {
+      await completeOnboarding(BACKEND_URL, {
         device_id: deviceId,
         timezone,
         wake_time: wakeTime,
@@ -727,9 +760,7 @@ export default function App() {
           goals: onboardingGoals
         })
       });
-      setNeedsOnboarding(Boolean(response.needs_onboarding));
-      setProfileContext(response.profile_context || DEFAULT_PROFILE_CONTEXT);
-      await loadSession(deviceId, timezone, {
+      await openAndApplySession(deviceId, timezone, {
         entry_context: {
           source: "manual",
           event_id: null,
@@ -746,7 +777,7 @@ export default function App() {
     }
   }, [
     deviceId,
-    loadSession,
+    openAndApplySession,
     onboardingBedtime,
     onboardingFormValid,
     onboardingGoals,
@@ -819,7 +850,6 @@ export default function App() {
               visibleConversationKey={visibleConversationKey}
               messages={activeMessages}
               messageCursor={sessionCursor}
-              entryContext={entryContext}
             />
           )}
         </View>

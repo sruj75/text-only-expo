@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createWebSocketChatAdapter } from "../src/lib/wsAdapter";
-import type { EntryContext, TaskPanelSnapshot } from "../src/types/chat";
+import type { TaskPanelSnapshot } from "../src/types/chat";
 
 class MockWebSocket {
   static instances: MockWebSocket[] = [];
@@ -46,15 +46,6 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 600) => {
   }
 };
 
-const entryContext: EntryContext = {
-  source: "manual",
-  event_id: null,
-  trigger_type: null,
-  scheduled_time: null,
-  calendar_event_id: null,
-  entry_mode: "reactive"
-};
-
 const runWith = async (
   userText: string,
   onTaskPanelState?: (snapshot: TaskPanelSnapshot) => void,
@@ -65,7 +56,6 @@ const runWith = async (
     deviceId: "device-1",
     sessionId: "session-1",
     timezone: "Asia/Kolkata",
-    getEntryContext: () => entryContext,
     getCursor: () => cursor,
     onTaskPanelState
   });
@@ -113,7 +103,6 @@ describe("ws adapter", () => {
     const initFrame = JSON.parse(ws.sent[0]);
     expect(initFrame).toMatchObject({
       type: "init",
-      device_id: "device-1",
       session_id: "session-1",
       cursor: "cursor-0"
     });
