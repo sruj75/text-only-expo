@@ -75,9 +75,8 @@ export type StoredMessage = {
 
 export type SessionOpenResponse = {
   session_id: string;
-  message_cursor: string | null;
   startup_status: string;
-  messages_delta: StoredMessage[];
+  messages: StoredMessage[];
   needs_onboarding: boolean;
   profile_context: ProfileContext;
   task_panel_state: TaskPanelSnapshot;

@@ -48,15 +48,13 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 600) => {
 
 const runWith = async (
   userText: string,
-  onTaskPanelState?: (snapshot: TaskPanelSnapshot) => void,
-  cursor: string | null = "cursor-0"
+  onTaskPanelState?: (snapshot: TaskPanelSnapshot) => void
 ) => {
   const adapter = createWebSocketChatAdapter({
     backendUrl: "http://localhost:8000",
     deviceId: "device-1",
     sessionId: "session-1",
     timezone: "Asia/Kolkata",
-    getCursor: () => cursor,
     onTaskPanelState
   });
 
@@ -103,8 +101,7 @@ describe("ws adapter", () => {
     const initFrame = JSON.parse(ws.sent[0]);
     expect(initFrame).toMatchObject({
       type: "init",
-      session_id: "session-1",
-      cursor: "cursor-0"
+      session_id: "session-1"
     });
     expect(ws.sent).toHaveLength(1);
 
@@ -169,16 +166,16 @@ describe("ws adapter", () => {
     });
   });
 
-  it("supports null cursor on websocket init", async () => {
+  it("sends session-only init payload", async () => {
     vi.stubGlobal("WebSocket", MockWebSocket as any);
     MockWebSocket.instances = [];
 
-    const { ws, updatesPromise } = await runWith("hello", undefined, null);
+    const { ws, updatesPromise } = await runWith("hello");
 
     const initFrame = JSON.parse(ws.sent[0]);
-    expect(initFrame.cursor).toBeNull();
+    expect(initFrame).toEqual({ type: "init", session_id: "session-1" });
 
-    ws.serverSend({ type: "session_ready", session_id: "session-1", cursor: "cursor-1" });
+    ws.serverSend({ type: "session_ready", session_id: "session-1" });
     ws.serverSend({ type: "assistant_done", message_id: "a1", text: "Done" });
 
     await updatesPromise;

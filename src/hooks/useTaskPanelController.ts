@@ -1,6 +1,6 @@
-import { useCallback, useReducer, useState } from "react";
+import { useCallback, useEffect, useReducer, useState } from "react";
 
-import { EMPTY_TASK_PANEL_SNAPSHOT } from "../lib/taskPanel";
+import { EMPTY_TASK_PANEL_SNAPSHOT, normalizeTaskPanelSnapshot } from "../lib/taskPanel";
 import {
   refreshTaskPanel,
   syncTaskStatus,
@@ -17,6 +17,7 @@ type TaskPanelControllerArgs = {
   deviceId: string;
   timezone: string;
   sessionId: string;
+  initialSnapshot?: TaskPanelSnapshot | null;
 };
 
 type TaskPanelState = {
@@ -84,7 +85,8 @@ export const useTaskPanelController = ({
   backendUrl,
   deviceId,
   timezone,
-  sessionId
+  sessionId,
+  initialSnapshot,
 }: TaskPanelControllerArgs) => {
   const [state, dispatch] = useReducer(taskPanelReducer, initialTaskPanelState);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -93,6 +95,11 @@ export const useTaskPanelController = ({
   const handleTaskPanelState = useCallback((snapshot: TaskPanelSnapshot) => {
     dispatch({ type: "snapshot_received", snapshot });
   }, []);
+
+  useEffect(() => {
+    const snapshot = initialSnapshot ? normalizeTaskPanelSnapshot(initialSnapshot) : EMPTY_TASK_PANEL_SNAPSHOT;
+    dispatch({ type: "snapshot_replaced", snapshot });
+  }, [initialSnapshot, sessionId]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);

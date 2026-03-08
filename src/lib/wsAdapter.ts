@@ -12,7 +12,6 @@ type AdapterConfig = {
   deviceId: string;
   sessionId: string;
   timezone: string;
-  getCursor: () => string | null;
   onTaskPanelState?: (snapshot: TaskPanelSnapshot) => void;
 };
 
@@ -20,8 +19,6 @@ type WsServerFrame =
   | {
       type: "session_ready";
       session_id: string;
-      cursor?: string | null;
-      history_delta?: unknown[];
     }
   | {
       type: "assistant_delta";
@@ -203,7 +200,6 @@ export const createWebSocketChatAdapter = (
           JSON.stringify({
             type: "init",
             session_id: config.sessionId,
-            cursor: config.getCursor(),
           }),
         );
 

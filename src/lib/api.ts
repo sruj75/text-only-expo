@@ -25,7 +25,6 @@ type SessionOpenPayload = {
   session_id?: string;
   entry_context?: EntryContext;
   source: "manual" | "push";
-  cursor?: string | null;
 };
 
 export type TaskManagementAction =

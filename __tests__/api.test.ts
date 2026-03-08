@@ -85,7 +85,7 @@ describe("api client", () => {
   it("opens session with durable startup contract", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ session_id: "s-open", messages_delta: [], message_cursor: null })
+      json: async () => ({ session_id: "s-open", messages: [] })
     });
 
     await openSession("http://localhost:8000", {
@@ -100,8 +100,7 @@ describe("api client", () => {
         calendar_event_id: null,
         entry_mode: "reactive"
       },
-      source: "manual",
-      cursor: null
+      source: "manual"
     });
 
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -119,8 +118,7 @@ describe("api client", () => {
         calendar_event_id: null,
         entry_mode: "reactive"
       },
-      source: "manual",
-      cursor: null
+      source: "manual"
     });
   });
 
