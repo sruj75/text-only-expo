@@ -183,12 +183,8 @@ export const extractTaskPanelSnapshot = (value: unknown): TaskPanelSnapshot | nu
 };
 
 export const getCurrentFocusTitle = (snapshot: TaskPanelSnapshot): string | null => {
-  const currentFocusTask =
-    snapshot.tasks.find((task) => task.is_active) ||
-    snapshot.tasks.find((task) => task.status !== "done") ||
-    null;
-
-  return currentFocusTask?.title || null;
+  const currentFocusTask = snapshot.tasks.find((task) => task.is_active) || null;
+  return currentFocusTask ? currentFocusTask.title : null;
 };
 
 export const getTaskPanelHeightRatio = (visibility: TaskPanelVisibility): number => {

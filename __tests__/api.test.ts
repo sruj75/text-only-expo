@@ -26,7 +26,10 @@ describe("api client", () => {
     await expect(openSession("http://localhost:8000", {
       device_id: "d5",
       timezone: "UTC",
-      source: "manual"
+      source: "manual",
+      open_id: "open-test-1",
+      client_version: "dev-local",
+      contract_version: "2026-03-09"
     })).rejects.toThrow(
       "Request failed (503): service down"
     );
@@ -100,7 +103,10 @@ describe("api client", () => {
         calendar_event_id: null,
         entry_mode: "reactive"
       },
-      source: "manual"
+      source: "manual",
+      open_id: "open-test-2",
+      client_version: "dev-local",
+      contract_version: "2026-03-09"
     });
 
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -118,7 +124,10 @@ describe("api client", () => {
         calendar_event_id: null,
         entry_mode: "reactive"
       },
-      source: "manual"
+      source: "manual",
+      open_id: "open-test-2",
+      client_version: "dev-local",
+      contract_version: "2026-03-09"
     });
   });
 

@@ -25,6 +25,9 @@ type SessionOpenPayload = {
   session_id?: string;
   entry_context?: EntryContext;
   source: "manual" | "push";
+  open_id: string;
+  client_version: string;
+  contract_version: string;
 };
 
 export type TaskManagementAction =

@@ -53,7 +53,7 @@ describe("task panel helpers", () => {
     expect(getTaskPanelHeightRatio("expanded")).toBe(1);
   });
 
-  it("uses only task titles for current focus and ignores backend status copy", () => {
+  it("uses only time-derived active tasks for current focus", () => {
     expect(
       getCurrentFocusTitle({
         ...EMPTY_TASK_PANEL_SNAPSHOT,
@@ -76,6 +76,6 @@ describe("task panel helpers", () => {
           }
         ]
       })
-    ).toBe("Write landing page");
+    ).toBeNull();
   });
 });

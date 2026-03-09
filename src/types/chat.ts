@@ -80,4 +80,6 @@ export type SessionOpenResponse = {
   needs_onboarding: boolean;
   profile_context: ProfileContext;
   task_panel_state: TaskPanelSnapshot;
+  release_id?: string;
+  contract_version?: string;
 };

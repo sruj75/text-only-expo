@@ -11,6 +11,11 @@ import {
 } from "../lib/api";
 import { getOrCreateDeviceContext } from "../lib/device";
 import {
+  CONTRACT_VERSION,
+  RELEASE_ID,
+  generateOpenId,
+} from "../lib/runtimeContract";
+import {
   buildHealthAnchors,
   buildPlaybookSummary,
   formatTimeForDisplay,
@@ -169,6 +174,7 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
       const requestToken = sessionRequestTokenRef.current + 1;
       sessionRequestTokenRef.current = requestToken;
       const resolvedEntryContext = intent?.entry_context || MANUAL_CONTEXT;
+      const openId = generateOpenId();
 
       try {
         const opened = await openSession(backendUrl, {
@@ -177,6 +183,9 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
           session_id: intent?.session_id,
           entry_context: resolvedEntryContext,
           source: resolvedEntryContext.source,
+          open_id: openId,
+          client_version: RELEASE_ID,
+          contract_version: CONTRACT_VERSION,
         });
 
         if (requestToken !== sessionRequestTokenRef.current) {
