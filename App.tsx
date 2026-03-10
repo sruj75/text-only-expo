@@ -7,7 +7,7 @@ import {
   useLocalRuntime,
 } from "@assistant-ui/react-native";
 import type { ThreadMessageLike } from "@assistant-ui/react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Notifications from "expo-notifications";
 import { SafeAreaView, StatusBar, StyleSheet, Text, View } from "react-native";
 import { useMemo, useState } from "react";
 
@@ -25,6 +25,15 @@ if (!rawBackendUrl) {
 }
 const BACKEND_URL: string = rawBackendUrl;
 
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
 const toThreadMessages = (messages: StoredMessage[]): ThreadMessageLike[] => {
   return messages.map((message) => ({
     id: message.id,
@@ -39,7 +48,6 @@ type ChatPaneProps = {
   deviceId: string;
   timezone: string;
   sessionId: string;
-  visibleConversationKey: string;
   messages: StoredMessage[];
   initialTaskPanelState: TaskPanelSnapshot | null;
 };
@@ -49,7 +57,6 @@ const ChatPane = ({
   deviceId,
   timezone,
   sessionId,
-  visibleConversationKey,
   messages,
   initialTaskPanelState,
 }: ChatPaneProps) => {
@@ -88,8 +95,6 @@ const ChatPane = ({
 
   const runtime = useLocalRuntime(chatModel, {
     initialMessages: toThreadMessages(messages),
-    storage: AsyncStorage,
-    storagePrefix: `intentive:${sessionId}:${visibleConversationKey}`,
   });
   const taskPanelMaxHeight = Math.max(
     0,
@@ -238,7 +243,6 @@ export default function App() {
               deviceId={deviceId}
               timezone={timezone}
               sessionId={activeThreadId}
-              visibleConversationKey={visibleConversationKey}
               messages={visibleMessages}
               initialTaskPanelState={initialTaskPanelState}
             />
