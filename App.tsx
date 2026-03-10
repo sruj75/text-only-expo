@@ -172,7 +172,6 @@ const ChatPane = ({
     handleTaskPanelState,
     handleTaskStatusToggle,
     handleTogglePanel,
-    handleTopEssentialToggle,
   } = useTaskPanelController({
     backendUrl,
     deviceId,
@@ -265,7 +264,6 @@ const ChatPane = ({
             onClosePanel={handleClosePanel}
             onTogglePanel={handleTogglePanel}
             onToggleTaskStatus={handleTaskStatusToggle}
-            onToggleTopEssential={handleTopEssentialToggle}
           />
         </ThreadRoot>
       </View>

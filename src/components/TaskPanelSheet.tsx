@@ -9,7 +9,7 @@ import {
   View
 } from "react-native";
 
-import { getCurrentFocusTitle, getTaskPanelHeightRatio } from "../lib/taskPanel";
+import { getTaskPanelHeightRatio } from "../lib/taskPanel";
 import type { TaskPanelSnapshot, TaskPanelTask, TaskPanelVisibility } from "../types/chat";
 
 type TaskPanelSheetProps = {
@@ -19,7 +19,6 @@ type TaskPanelSheetProps = {
   pendingActionKey: string | null;
   onClose: () => void;
   onToggleTaskStatus: (task: TaskPanelTask) => void;
-  onToggleTopEssential: (task: TaskPanelTask) => void;
 };
 
 export const TaskPanelSheet = ({
@@ -28,8 +27,7 @@ export const TaskPanelSheet = ({
   maxHeight,
   pendingActionKey,
   onClose,
-  onToggleTaskStatus,
-  onToggleTopEssential
+  onToggleTaskStatus
 }: TaskPanelSheetProps) => {
   const animatedHeight = useRef(new Animated.Value(0)).current;
   const handlePanResponder = useMemo(
@@ -61,11 +59,6 @@ export const TaskPanelSheet = ({
   }, [animatedHeight, targetHeight]);
 
   const panelVisible = visibility !== "closed" || targetHeight > 0;
-  const topEssentials =
-    snapshot.top_essentials.length > 0
-      ? snapshot.top_essentials
-      : snapshot.tasks.filter((task) => task.is_top_essential).map((task) => task.title);
-  const currentFocusTitle = getCurrentFocusTitle(snapshot);
 
   return (
     <Animated.View
@@ -95,38 +88,12 @@ export const TaskPanelSheet = ({
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Now</Text>
-            {currentFocusTitle ? (
-              <Text style={styles.nowText}>{currentFocusTitle}</Text>
-            ) : (
-              <Text style={styles.emptyText}>Nothing to do yet.</Text>
-            )}
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Priorities</Text>
-            {topEssentials.length > 0 ? (
-              <View style={styles.priorityList}>
-                {topEssentials.map((item) => (
-                  <Text key={item} style={styles.priorityText}>
-                    {item}
-                  </Text>
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.emptyText}>No priorities yet.</Text>
-            )}
-          </View>
-
-          <View style={styles.section}>
             <Text style={styles.sectionTitle}>Tasks</Text>
             {snapshot.tasks.length > 0 ? (
               <View style={styles.taskList}>
                 {snapshot.tasks.map((task) => {
                   const doneActionKey = `status:${task.id}`;
-                  const essentialActionKey = `essential:${task.id}`;
                   const statusPending = pendingActionKey === doneActionKey;
-                  const essentialPending = pendingActionKey === essentialActionKey;
 
                   return (
                     <View key={task.id} style={styles.taskRow}>
@@ -152,30 +119,6 @@ export const TaskPanelSheet = ({
                       >
                         {task.title}
                       </Text>
-
-                      <Pressable
-                        disabled={essentialPending}
-                        onPress={() => onToggleTopEssential(task)}
-                        accessibilityRole="button"
-                        accessibilityLabel={
-                          task.is_top_essential
-                            ? `Remove ${task.title} from priorities`
-                            : `Add ${task.title} to priorities`
-                        }
-                        style={[
-                          styles.priorityToggleButton,
-                          essentialPending && styles.controlDisabled
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.priorityToggleText,
-                            task.is_top_essential && styles.priorityToggleTextActive
-                          ]}
-                        >
-                          {task.is_top_essential ? "★" : "☆"}
-                        </Text>
-                      </Pressable>
                     </View>
                   );
                 })}
@@ -200,6 +143,12 @@ export const TaskPanelSheet = ({
               <Text style={styles.emptyText}>No schedule yet.</Text>
             )}
           </View>
+          {snapshot.last_action_summary ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Last Action</Text>
+              <Text style={styles.summaryText}>{snapshot.last_action_summary}</Text>
+            </View>
+          ) : null}
         </ScrollView>
       </View>
     </Animated.View>
@@ -253,20 +202,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700"
   },
-  nowText: {
-    color: "#0f1720",
-    fontSize: 24,
-    lineHeight: 32,
-    fontWeight: "500"
-  },
-  priorityList: {
-    gap: 8
-  },
-  priorityText: {
-    color: "#0f1720",
-    fontSize: 16,
-    lineHeight: 22
-  },
   taskList: {
     gap: 10
   },
@@ -296,19 +231,6 @@ const styles = StyleSheet.create({
     color: "#7a8593",
     textDecorationLine: "line-through"
   },
-  priorityToggleButton: {
-    minWidth: 24,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  priorityToggleText: {
-    color: "#c0c7d1",
-    fontSize: 18,
-    lineHeight: 18
-  },
-  priorityToggleTextActive: {
-    color: "#0f1720"
-  },
   controlDisabled: {
     opacity: 0.6
   },
@@ -336,5 +258,10 @@ const styles = StyleSheet.create({
     color: "#6d7784",
     fontSize: 13,
     lineHeight: 19
+  },
+  summaryText: {
+    color: "#213043",
+    fontSize: 13,
+    lineHeight: 18
   }
 });

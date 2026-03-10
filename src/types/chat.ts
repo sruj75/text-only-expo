@@ -40,7 +40,6 @@ export type TaskPanelTask = {
   status: string;
   time_label: string | null;
   is_active: boolean;
-  is_top_essential: boolean;
 };
 
 export type TaskPanelScheduleBlock = {
@@ -57,10 +56,10 @@ export type TaskPanelSnapshot = {
   active_action: string | null;
   headline: string | null;
   tasks: TaskPanelTask[];
-  top_essentials: string[];
   schedule: TaskPanelScheduleBlock[];
   updated_at: string | null;
   error_message: string | null;
+  last_action_summary: string | null;
 };
 
 export type StoredMessage = {

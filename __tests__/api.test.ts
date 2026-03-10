@@ -4,7 +4,8 @@ import {
   completeOnboarding,
   openSession,
   registerPushToken,
-  taskManagementAction
+  taskManagementAction,
+  taskQueryAction
 } from "../src/lib/api";
 
 const mockFetch = vi.fn();
@@ -134,13 +135,16 @@ describe("api client", () => {
   it("calls task-management endpoint", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ result: { action: "get_tasks" } })
+      json: async () => ({ result: { intent: "status" } })
     });
 
     await taskManagementAction("http://localhost:8000", {
       device_id: "device-11",
       timezone: "UTC",
-      action: "get_tasks"
+      intent: "status",
+      entities: {
+        updates: [{ task_id: "task-1", status: "done" }]
+      }
     });
 
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
@@ -149,7 +153,33 @@ describe("api client", () => {
     expect(JSON.parse(String(init.body))).toEqual({
       device_id: "device-11",
       timezone: "UTC",
-      action: "get_tasks",
+      intent: "status",
+      entities: {
+        updates: [{ task_id: "task-1", status: "done" }]
+      },
+      options: {}
+    });
+  });
+
+  it("calls task-query endpoint", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ result: { query: "tasks_overview" } })
+    });
+
+    await taskQueryAction("http://localhost:8000", {
+      device_id: "device-11",
+      timezone: "UTC",
+      query: "tasks_overview"
+    });
+
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:8000/agent/task-query");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      device_id: "device-11",
+      timezone: "UTC",
+      query: "tasks_overview",
       payload: {}
     });
   });

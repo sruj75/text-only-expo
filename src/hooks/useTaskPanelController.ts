@@ -3,8 +3,7 @@ import { useCallback, useEffect, useReducer, useState } from "react";
 import { EMPTY_TASK_PANEL_SNAPSHOT, normalizeTaskPanelSnapshot } from "../lib/taskPanel";
 import {
   refreshTaskPanel,
-  syncTaskStatus,
-  syncTopEssential
+  syncTaskStatus
 } from "../lib/taskPanelActions";
 import type {
   TaskPanelSnapshot,
@@ -158,30 +157,6 @@ export const useTaskPanelController = ({
     }
   }, [backendUrl, deviceId, sessionId, timezone]);
 
-  const handleTopEssentialToggle = useCallback(async (task: TaskPanelTask) => {
-    const actionKey = `essential:${task.id}`;
-    setPendingActionKey(actionKey);
-
-    try {
-      const nextSnapshot = await syncTopEssential({
-        baseUrl: backendUrl,
-        deviceId,
-        timezone,
-        sessionId,
-        task,
-        tasks: state.snapshot.tasks
-      });
-
-      if (nextSnapshot) {
-        dispatch({ type: "snapshot_replaced", snapshot: nextSnapshot });
-      }
-    } catch (taskError) {
-      console.warn("Top essential update failed", taskError);
-    } finally {
-      setPendingActionKey((currentKey) => (currentKey === actionKey ? null : currentKey));
-    }
-  }, [backendUrl, deviceId, sessionId, state.snapshot.tasks, timezone]);
-
   return {
     taskPanelSnapshot: state.snapshot,
     taskPanelVisibility: state.visibility,
@@ -190,6 +165,5 @@ export const useTaskPanelController = ({
     handleTaskPanelState,
     handleTaskStatusToggle,
     handleTogglePanel,
-    handleTopEssentialToggle
   };
 };

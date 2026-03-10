@@ -30,19 +30,30 @@ type SessionOpenPayload = {
   contract_version: string;
 };
 
-export type TaskManagementAction =
-  | "capture_tasks"
-  | "get_tasks"
-  | "set_top_essentials"
-  | "timebox_task"
-  | "get_schedule"
-  | "update_task_status";
+export type TaskManagementIntent =
+  | "capture"
+  | "timebox"
+  | "prioritize"
+  | "status"
+  | "delete"
+  | "reschedule";
+
+export type TaskQueryType = "tasks_overview" | "schedule_day";
 
 type TaskManagementPayload = {
   device_id: string;
   timezone: string;
   session_id?: string;
-  action: TaskManagementAction;
+  intent: TaskManagementIntent;
+  entities?: Record<string, unknown>;
+  options?: Record<string, unknown>;
+};
+
+type TaskQueryPayload = {
+  device_id: string;
+  timezone: string;
+  session_id?: string;
+  query: TaskQueryType;
   payload?: Record<string, unknown>;
 };
 
@@ -108,6 +119,20 @@ export const taskManagementAction = async (
   payload: TaskManagementPayload,
 ): Promise<Record<string, unknown>> => {
   return request<Record<string, unknown>>(baseUrl, "/agent/task-management", {
+    method: "POST",
+    body: JSON.stringify({
+      ...payload,
+      entities: payload.entities || {},
+      options: payload.options || {},
+    }),
+  });
+};
+
+export const taskQueryAction = async (
+  baseUrl: string,
+  payload: TaskQueryPayload,
+): Promise<Record<string, unknown>> => {
+  return request<Record<string, unknown>>(baseUrl, "/agent/task-query", {
     method: "POST",
     body: JSON.stringify({
       ...payload,

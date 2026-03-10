@@ -21,7 +21,6 @@ type ChatFooterRailProps = {
   onClosePanel: () => void;
   onTogglePanel: () => void;
   onToggleTaskStatus: (task: TaskPanelTask) => void;
-  onToggleTopEssential: (task: TaskPanelTask) => void;
 };
 
 export const ChatFooterRail = ({
@@ -33,8 +32,7 @@ export const ChatFooterRail = ({
   onComposerLayout,
   onClosePanel,
   onTogglePanel,
-  onToggleTaskStatus,
-  onToggleTopEssential
+  onToggleTaskStatus
 }: ChatFooterRailProps) => {
   const aui = useAui();
   const threadIsRunning = useThreadIsRunning();
@@ -65,7 +63,6 @@ export const ChatFooterRail = ({
         pendingActionKey={pendingActionKey}
         onClose={onClosePanel}
         onToggleTaskStatus={onToggleTaskStatus}
-        onToggleTopEssential={onToggleTopEssential}
       />
 
       <View style={styles.composer} onLayout={onComposerLayout}>

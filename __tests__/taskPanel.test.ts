@@ -12,8 +12,7 @@ describe("task panel helpers", () => {
   it("normalizes missing values into safe defaults", () => {
     const snapshot = normalizeTaskPanelSnapshot({
       run_status: "running",
-      tasks: [{ id: "task-1", title: "Ship mobile UI" }],
-      top_essentials: ["Ship mobile UI"]
+      tasks: [{ id: "task-1", title: "Ship mobile UI" }]
     });
 
     expect(snapshot).toEqual({
@@ -25,11 +24,9 @@ describe("task panel helpers", () => {
           title: "Ship mobile UI",
           status: "todo",
           time_label: null,
-          is_active: false,
-          is_top_essential: false
+          is_active: false
         }
-      ],
-      top_essentials: ["Ship mobile UI"]
+      ]
     });
   });
 
@@ -71,8 +68,7 @@ describe("task panel helpers", () => {
             title: "Write landing page",
             status: "todo",
             time_label: null,
-            is_active: false,
-            is_top_essential: false
+            is_active: false
           }
         ]
       })

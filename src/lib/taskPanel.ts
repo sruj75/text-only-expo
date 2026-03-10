@@ -23,16 +23,6 @@ const asRecord = (value: unknown): Record<string, unknown> | null => {
   return null;
 };
 
-const asStringArray = (value: unknown): string[] => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((item) => asString(item))
-    .filter((item): item is string => Boolean(item));
-};
-
 const asTaskStatus = (value: unknown): string => {
   return asString(value) || "todo";
 };
@@ -65,8 +55,7 @@ const normalizeTask = (value: unknown, index: number): TaskPanelTask | null => {
     title,
     status: asTaskStatus(record.status),
     time_label: asString(record.time_label) || asString(record.timebox_label),
-    is_active: asBoolean(record.is_active),
-    is_top_essential: asBoolean(record.is_top_essential)
+    is_active: asBoolean(record.is_active)
   };
 };
 
@@ -102,10 +91,10 @@ export const EMPTY_TASK_PANEL_SNAPSHOT: TaskPanelSnapshot = {
   active_action: null,
   headline: null,
   tasks: [],
-  top_essentials: [],
   schedule: [],
   updated_at: null,
-  error_message: null
+  error_message: null,
+  last_action_summary: null
 };
 
 export const normalizeTaskPanelSnapshot = (value: unknown): TaskPanelSnapshot => {
@@ -131,10 +120,10 @@ export const normalizeTaskPanelSnapshot = (value: unknown): TaskPanelSnapshot =>
     active_action: asString(record.active_action),
     headline: asString(record.headline),
     tasks,
-    top_essentials: asStringArray(record.top_essentials),
     schedule,
     updated_at: asString(record.updated_at),
-    error_message: asString(record.error_message)
+    error_message: asString(record.error_message),
+    last_action_summary: asString(record.last_action_summary)
   };
 };
 
@@ -148,7 +137,6 @@ const findSnapshotCandidate = (value: unknown): Record<string, unknown> | null =
     "run_status" in record ||
     "tasks" in record ||
     "schedule" in record ||
-    "top_essentials" in record ||
     "active_action" in record ||
     "headline" in record;
 

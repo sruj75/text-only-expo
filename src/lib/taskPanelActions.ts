@@ -1,4 +1,4 @@
-import { taskManagementAction } from "./api";
+import { taskManagementAction, taskQueryAction } from "./api";
 import { extractTaskPanelSnapshot } from "./taskPanel";
 import type { TaskPanelSnapshot, TaskPanelTask } from "../types/chat";
 
@@ -15,11 +15,12 @@ export const refreshTaskPanel = async ({
   timezone,
   sessionId
 }: BaseTaskPanelActionParams): Promise<TaskPanelSnapshot | null> => {
-  const response = await taskManagementAction(baseUrl, {
+  const response = await taskQueryAction(baseUrl, {
     device_id: deviceId,
     timezone,
     session_id: sessionId,
-    action: "get_tasks"
+    query: "tasks_overview",
+    payload: { scope: "today" }
   });
 
   return extractTaskPanelSnapshot(response);
@@ -36,33 +37,14 @@ export const syncTaskStatus = async (
     device_id: params.deviceId,
     timezone: params.timezone,
     session_id: params.sessionId,
-    action: "update_task_status",
-    payload: {
+    intent: "status",
+    entities: {
+      updates: [
+        {
       task_id: params.task.id,
       status: nextStatus
-    }
-  });
-
-  return refreshTaskPanel(params);
-};
-
-export const syncTopEssential = async (
-  params: BaseTaskPanelActionParams & {
-    task: TaskPanelTask;
-    tasks: TaskPanelTask[];
-  }
-): Promise<TaskPanelSnapshot | null> => {
-  const nextTaskIds = params.task.is_top_essential
-    ? params.tasks.filter((task) => task.id !== params.task.id && task.is_top_essential)
-    : params.tasks.filter((task) => task.is_top_essential || task.id === params.task.id);
-
-  await taskManagementAction(params.baseUrl, {
-    device_id: params.deviceId,
-    timezone: params.timezone,
-    session_id: params.sessionId,
-    action: "set_top_essentials",
-    payload: {
-      task_ids: nextTaskIds.map((task) => task.id)
+        }
+      ]
     }
   });
 
