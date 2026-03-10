@@ -131,11 +131,27 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
   const appStateRef = useRef(AppState.currentState);
   const lastBackgroundAtRef = useRef<number | null>(null);
   const sessionRequestTokenRef = useRef<number>(0);
+  const pendingSessionOpensRef = useRef<number>(0);
   const staleSessionFallbackRef = useRef<{
     token: number;
     opened: SessionOpenResponse;
     resolvedEntryContext: EntryContext;
   } | null>(null);
+  const [isSessionOpening, setIsSessionOpening] = useState<boolean>(false);
+
+  const markSessionOpenStarted = useCallback(() => {
+    pendingSessionOpensRef.current += 1;
+    if (pendingSessionOpensRef.current === 1) {
+      setIsSessionOpening(true);
+    }
+  }, []);
+
+  const markSessionOpenFinished = useCallback(() => {
+    pendingSessionOpensRef.current = Math.max(0, pendingSessionOpensRef.current - 1);
+    if (pendingSessionOpensRef.current === 0) {
+      setIsSessionOpening(false);
+    }
+  }, []);
 
   const applyOpenedSession = useCallback(
     (opened: SessionOpenResponse, resolvedEntryContext: EntryContext) => {
@@ -170,6 +186,7 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
 
   const openAndApplySession = useCallback(
     async (currentDeviceId: string, currentTimezone: string, intent: EntryIntent | null) => {
+      markSessionOpenStarted();
       const requestToken = sessionRequestTokenRef.current + 1;
       sessionRequestTokenRef.current = requestToken;
       const resolvedEntryContext = intent?.entry_context || MANUAL_CONTEXT;
@@ -209,9 +226,11 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
           return;
         }
         throw error;
+      } finally {
+        markSessionOpenFinished();
       }
     },
-    [applyOpenedSession, backendUrl],
+    [applyOpenedSession, backendUrl, markSessionOpenFinished, markSessionOpenStarted],
   );
 
   const syncPushToken = useCallback(
@@ -260,7 +279,10 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
 
         setTimezone(nextTimezone);
         setDeviceId(nextDeviceId);
-        await openAndApplySession(nextDeviceId, nextTimezone, null);
+        setLoading(false);
+        void openAndApplySession(nextDeviceId, nextTimezone, null).catch((setupSessionError) => {
+          console.warn("Failed to open startup session", setupSessionError);
+        });
         void syncPushToken(nextDeviceId, nextTimezone).catch((tokenError) => {
           console.warn("Push token sync failed", tokenError);
         });
@@ -435,6 +457,7 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
     activeThreadId,
     deviceId,
     initialTaskPanelState,
+    isSessionOpening,
     loading,
     needsOnboarding,
     onCompleteOnboarding,

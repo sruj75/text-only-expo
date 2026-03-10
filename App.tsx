@@ -8,8 +8,16 @@ import {
 } from "@assistant-ui/react-native";
 import type { ThreadMessageLike } from "@assistant-ui/react-native";
 import * as Notifications from "expo-notifications";
-import { SafeAreaView, StatusBar, StyleSheet, Text, View } from "react-native";
-import { useMemo, useState } from "react";
+import {
+  Animated,
+  Easing,
+  SafeAreaView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ChatFooterRail } from "./src/components/ChatFooterRail";
 import { OnboardingScreen } from "./src/components/OnboardingScreen";
@@ -41,6 +49,98 @@ const toThreadMessages = (messages: StoredMessage[]): ThreadMessageLike[] => {
     content: message.content,
     createdAt: new Date(message.created_at),
   }));
+};
+
+const messageHasVisibleText = (message: { content?: unknown }): boolean => {
+  if (!Array.isArray(message.content)) {
+    return false;
+  }
+
+  return message.content.some((part) => {
+    if (!part || typeof part !== "object") {
+      return false;
+    }
+    const record = part as { type?: unknown; text?: unknown };
+    return (
+      record.type === "text" && typeof record.text === "string" && record.text.trim().length > 0
+    );
+  });
+};
+
+const isAssistantTypingMessage = (message: {
+  role?: unknown;
+  status?: { type?: unknown } | null;
+  content?: unknown;
+}): boolean => {
+  if (message.role !== "assistant") {
+    return false;
+  }
+
+  const statusType = message.status?.type;
+  const hasVisibleText = messageHasVisibleText(message);
+  return statusType === "running" && !hasVisibleText;
+};
+
+const TypingDots = () => {
+  const dotValues = useRef([
+    new Animated.Value(0.3),
+    new Animated.Value(0.3),
+    new Animated.Value(0.3),
+  ]).current;
+
+  useEffect(() => {
+    const loops = dotValues.map((dot, index) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(index * 120),
+          Animated.timing(dot, {
+            toValue: 1,
+            duration: 320,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(dot, {
+            toValue: 0.3,
+            duration: 320,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      ),
+    );
+
+    loops.forEach((loop) => loop.start());
+    return () => {
+      loops.forEach((loop) => loop.stop());
+    };
+  }, [dotValues]);
+
+  return (
+    <View style={styles.typingDotsRow}>
+      {dotValues.map((dot, index) => (
+        <Animated.View
+          key={index}
+          style={[
+            styles.typingDot,
+            {
+              opacity: dot,
+              transform: [{ scale: dot }],
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+};
+
+const PendingTypingBubble = () => {
+  return (
+    <View style={styles.pendingState}>
+      <View style={[styles.messageBubble, styles.assistantBubble, styles.typingBubble]}>
+        <TypingDots />
+      </View>
+    </View>
+  );
 };
 
 type ChatPaneProps = {
@@ -118,27 +218,36 @@ const ChatPane = ({
           <ThreadMessages
             style={styles.messagesList}
             contentContainerStyle={[styles.messagesContent, { paddingBottom: composerHeight + 12 }]}
-            renderMessage={({ message }) => (
-              <MessageRoot
-                style={[
-                  styles.messageBubble,
-                  message.role === "user" ? styles.userBubble : styles.assistantBubble,
-                ]}
-              >
-                <MessageContent
-                  renderText={({ part }) => (
-                    <Text
-                      style={[
-                        styles.messageText,
-                        message.role === "user" ? styles.userText : styles.assistantText,
-                      ]}
-                    >
-                      {part.text}
-                    </Text>
+            renderMessage={({ message }) => {
+              const typingMessage = isAssistantTypingMessage(message);
+
+              return (
+                <MessageRoot
+                  style={[
+                    styles.messageBubble,
+                    message.role === "user" ? styles.userBubble : styles.assistantBubble,
+                    typingMessage && styles.typingBubble,
+                  ]}
+                >
+                  {typingMessage ? (
+                    <TypingDots />
+                  ) : (
+                    <MessageContent
+                      renderText={({ part }) => (
+                        <Text
+                          style={[
+                            styles.messageText,
+                            message.role === "user" ? styles.userText : styles.assistantText,
+                          ]}
+                        >
+                          {part.text}
+                        </Text>
+                      )}
+                    />
                   )}
-                />
-              </MessageRoot>
-            )}
+                </MessageRoot>
+              );
+            }}
           />
 
           <ChatFooterRail
@@ -169,6 +278,7 @@ export default function App() {
     activeThreadId,
     deviceId,
     initialTaskPanelState,
+    isSessionOpening,
     loading,
     needsOnboarding,
     onCompleteOnboarding,
@@ -188,13 +298,18 @@ export default function App() {
     visibleMessages,
   } = useSessionLifecycle({ backendUrl: BACKEND_URL });
 
+  const isChatInitializing =
+    !deviceId ||
+    !activeThreadId ||
+    !visibleConversationKey ||
+    (isSessionOpening && visibleMessages.length === 0);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.standaloneScreen}>
         <StatusBar barStyle="dark-content" backgroundColor="#f3f5f7" />
-        <View style={styles.standaloneState}>
-          <Text style={styles.centeredTitle}>Getting Intentive ready...</Text>
-          <Text style={styles.centeredSubtitle}>Loading your device and chat context.</Text>
+        <View style={styles.chatPane}>
+          <PendingTypingBubble />
         </View>
       </SafeAreaView>
     );
@@ -227,11 +342,8 @@ export default function App() {
 
       <View style={styles.content}>
         <View style={styles.chatPane}>
-          {!deviceId || !activeThreadId || !visibleConversationKey ? (
-            <View style={styles.centeredState}>
-              <Text style={styles.centeredTitle}>Preparing your chat</Text>
-              <Text style={styles.centeredSubtitle}>Getting the conversation ready for you.</Text>
-            </View>
+          {isChatInitializing ? (
+            <PendingTypingBubble />
           ) : (
             <ChatPane
               key={visibleConversationKey}
@@ -257,12 +369,13 @@ const styles = StyleSheet.create({
   standaloneScreen: {
     flex: 1,
     backgroundColor: "#f3f5f7",
+    padding: 12,
   },
-  standaloneState: {
+  pendingState: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 24,
+    justifyContent: "flex-end",
+    paddingHorizontal: 12,
+    paddingBottom: 84,
   },
   content: {
     flex: 1,
@@ -276,22 +389,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#d8e0ea",
     overflow: "hidden",
-  },
-  centeredState: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 20,
-  },
-  centeredTitle: {
-    color: "#0f1720",
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  centeredSubtitle: {
-    marginTop: 8,
-    color: "#6d7784",
-    textAlign: "center",
   },
   chatRootContainer: {
     flex: 1,
@@ -323,6 +420,21 @@ const styles = StyleSheet.create({
   assistantBubble: {
     alignSelf: "flex-start",
     backgroundColor: "#eef2f6",
+  },
+  typingBubble: {
+    minHeight: 38,
+    justifyContent: "center",
+  },
+  typingDotsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  typingDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#6d7784",
   },
   messageText: {
     fontSize: 15,
