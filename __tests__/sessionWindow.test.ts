@@ -5,9 +5,10 @@ import {
   INTENT_RECENCY_THRESHOLD_MS,
   isFreshIntentTimestamp,
   normalizeRealtimeIntent,
+  sliceVisibleConversation,
   shouldResetVisibleConversation
 } from "../src/lib/sessionWindow";
-import type { EntryIntent } from "../src/types/chat";
+import type { EntryIntent, StoredMessage } from "../src/types/chat";
 
 describe("session window rules", () => {
   it("starts a new visible chat at or above the 5-minute threshold", () => {
@@ -71,5 +72,73 @@ describe("session window rules", () => {
       },
     };
     expect(normalizeRealtimeIntent(proactiveWithoutTime).entry_context.entry_mode).toBe("reactive");
+  });
+
+  it("shows only the newest conversation window after the latest startup turn", () => {
+    const messages: StoredMessage[] = [
+      {
+        id: "m1",
+        session_id: "s1",
+        user_id: "u1",
+        role: "assistant",
+        content: "older startup",
+        metadata: { startup_turn: true },
+        created_at: "2026-03-10T09:00:00Z",
+      },
+      {
+        id: "m2",
+        session_id: "s1",
+        user_id: "u1",
+        role: "user",
+        content: "old reply",
+        metadata: {},
+        created_at: "2026-03-10T09:01:00Z",
+      },
+      {
+        id: "m3",
+        session_id: "s1",
+        user_id: "u1",
+        role: "assistant",
+        content: "new startup",
+        metadata: { startup_turn: true },
+        created_at: "2026-03-10T09:10:00Z",
+      },
+      {
+        id: "m4",
+        session_id: "s1",
+        user_id: "u1",
+        role: "user",
+        content: "new reply",
+        metadata: {},
+        created_at: "2026-03-10T09:11:00Z",
+      },
+    ];
+
+    expect(sliceVisibleConversation(messages).map((message) => message.id)).toEqual(["m3", "m4"]);
+  });
+
+  it("keeps all messages when there is no startup turn marker", () => {
+    const messages: StoredMessage[] = [
+      {
+        id: "m1",
+        session_id: "s1",
+        user_id: "u1",
+        role: "assistant",
+        content: "hello",
+        metadata: {},
+        created_at: "2026-03-10T09:00:00Z",
+      },
+      {
+        id: "m2",
+        session_id: "s1",
+        user_id: "u1",
+        role: "user",
+        content: "hi",
+        metadata: {},
+        created_at: "2026-03-10T09:01:00Z",
+      },
+    ];
+
+    expect(sliceVisibleConversation(messages).map((message) => message.id)).toEqual(["m1", "m2"]);
   });
 });

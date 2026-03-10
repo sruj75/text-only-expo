@@ -1,13 +1,10 @@
 import { Keyboard, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, View } from "react-native";
 
-import type { MotivationStyle } from "../lib/onboarding";
-
 type OnboardingScreenProps = {
   onboardingWakeTime: string;
   onboardingBedtime: string;
   onboardingStruggles: string;
   onboardingGoals: string;
-  onboardingMotivationStyle: MotivationStyle;
   onboardingFormValid: boolean;
   onboardingSaving: boolean;
   onboardingStatus: string;
@@ -15,24 +12,14 @@ type OnboardingScreenProps = {
   setOnboardingBedtime: (value: string) => void;
   setOnboardingStruggles: (value: string) => void;
   setOnboardingGoals: (value: string) => void;
-  setOnboardingMotivationStyle: (value: MotivationStyle) => void;
   onCompleteOnboarding: () => void;
 };
-
-const motivationOptions: Array<{ value: MotivationStyle; label: string }> = [
-  { value: "straightforward", label: "Straightforward" },
-  { value: "supportive", label: "Supportive" },
-  { value: "balanced", label: "Balanced" },
-  { value: "motivation", label: "Motivation" },
-  { value: "zen", label: "Zen" },
-];
 
 export const OnboardingScreen = ({
   onboardingWakeTime,
   onboardingBedtime,
   onboardingStruggles,
   onboardingGoals,
-  onboardingMotivationStyle,
   onboardingFormValid,
   onboardingSaving,
   onboardingStatus,
@@ -40,7 +27,6 @@ export const OnboardingScreen = ({
   setOnboardingBedtime,
   setOnboardingStruggles,
   setOnboardingGoals,
-  setOnboardingMotivationStyle,
   onCompleteOnboarding,
 }: OnboardingScreenProps) => {
   return (
@@ -128,37 +114,6 @@ export const OnboardingScreen = ({
                   />
                 </View>
 
-                <View style={styles.onboardingField}>
-                  <Text style={styles.onboardingLabel}>
-                    What personality works best for you?
-                  </Text>
-                  <View style={styles.motivationOptions}>
-                    {motivationOptions.map((option) => (
-                      <Pressable
-                        key={option.value}
-                        onPress={() => {
-                          Keyboard.dismiss();
-                          setOnboardingMotivationStyle(option.value);
-                        }}
-                        style={[
-                          styles.motivationOption,
-                          onboardingMotivationStyle === option.value && styles.motivationOptionActive,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.motivationOptionText,
-                            onboardingMotivationStyle === option.value &&
-                              styles.motivationOptionTextActive,
-                          ]}
-                        >
-                          {option.label}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-
                 <Pressable
                   onPress={() => {
                     Keyboard.dismiss();
@@ -178,7 +133,7 @@ export const OnboardingScreen = ({
                 <Text style={styles.onboardingHint}>
                   {onboardingStatus === "completed"
                     ? "Profile is already completed."
-                    : "Add your sleep times, struggles, goals, and preferred motivation style to continue."}
+                    : "Add your sleep times, struggles, and goals to continue."}
                 </Text>
               </Pressable>
             </ScrollView>
@@ -274,30 +229,6 @@ const styles = StyleSheet.create({
   onboardingMultiline: {
     minHeight: 74,
     textAlignVertical: "top",
-  },
-  motivationOptions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  motivationOption: {
-    borderWidth: 1,
-    borderColor: "#c9d2dd",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    backgroundColor: "#ffffff",
-  },
-  motivationOptionActive: {
-    borderColor: "#0f1720",
-    backgroundColor: "#0f1720",
-  },
-  motivationOptionText: {
-    color: "#0f1720",
-    fontWeight: "600",
-  },
-  motivationOptionTextActive: {
-    color: "#ffffff",
   },
   onboardingButton: {
     marginTop: 10,

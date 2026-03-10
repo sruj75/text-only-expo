@@ -1,14 +1,6 @@
-export type MotivationStyle =
-  | "straightforward"
-  | "supportive"
-  | "balanced"
-  | "motivation"
-  | "zen";
-
 export type OnboardingAnswers = {
   struggles: string;
   goals: string;
-  motivationStyle: MotivationStyle;
 };
 
 type HealthAnchorSeed = {
@@ -62,23 +54,10 @@ export const parseTimeInput = (value: string): string | null => {
 export const buildPlaybookSummary = ({
   struggles,
   goals,
-  motivationStyle
 }: OnboardingAnswers): string => {
-  const label =
-    motivationStyle === "straightforward"
-      ? "Straightforward"
-      : motivationStyle === "supportive"
-        ? "Supportive"
-        : motivationStyle === "balanced"
-          ? "Balanced"
-          : motivationStyle === "motivation"
-            ? "Motivation"
-            : "Zen";
-
   return [
     `Struggles: ${struggles.trim()}`,
     `Goals: ${goals.trim()}`,
-    `Motivation style: ${label}`
   ].join("\n");
 };
 
@@ -92,22 +71,9 @@ export const parsePlaybookSummary = (
 
   const strugglesMatch = trimmed.match(/(?:^|\n)Struggles:\s*([^\n]+)/i);
   const goalsMatch = trimmed.match(/(?:^|\n)Goals:\s*([^\n]+)/i);
-  const motivationMatch = trimmed.match(/(?:^|\n)Motivation style:\s*([^\n]+)/i);
-
-  const motivationText = motivationMatch?.[1]?.trim().toLowerCase();
-  const motivationStyle: MotivationStyle | undefined =
-    motivationText === "straightforward" ||
-    motivationText === "supportive" ||
-    motivationText === "balanced" ||
-    motivationText === "motivation" ||
-    motivationText === "zen"
-      ? motivationText
-      : undefined;
-
   return {
     struggles: strugglesMatch?.[1]?.trim(),
     goals: goalsMatch?.[1]?.trim(),
-    motivationStyle
   };
 };
 

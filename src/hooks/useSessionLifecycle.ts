@@ -21,10 +21,10 @@ import {
   formatTimeForDisplay,
   parsePlaybookSummary,
   parseTimeInput,
-  type MotivationStyle,
 } from "../lib/onboarding";
 import {
   normalizeRealtimeIntent,
+  sliceVisibleConversation,
   shouldResetVisibleConversation,
 } from "../lib/sessionWindow";
 import type {
@@ -126,8 +126,6 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
   const [onboardingBedtime, setOnboardingBedtime] = useState<string>("");
   const [onboardingStruggles, setOnboardingStruggles] = useState<string>("");
   const [onboardingGoals, setOnboardingGoals] = useState<string>("");
-  const [onboardingMotivationStyle, setOnboardingMotivationStyle] =
-    useState<MotivationStyle>("supportive");
   const [onboardingSaving, setOnboardingSaving] = useState<boolean>(false);
 
   const appStateRef = useRef(AppState.currentState);
@@ -143,7 +141,9 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
     (opened: SessionOpenResponse, resolvedEntryContext: EntryContext) => {
       const nextNeedsOnboarding = Boolean(opened.needs_onboarding);
       const nextEntryContext = nextNeedsOnboarding ? MANUAL_CONTEXT : resolvedEntryContext;
-      const nextMessages = nextNeedsOnboarding ? [] : opened.messages || [];
+      const nextMessages = nextNeedsOnboarding
+        ? []
+        : sliceVisibleConversation(opened.messages || []);
       const nextConversationKey = nextNeedsOnboarding ? null : `${opened.session_id}:${Date.now()}`;
 
       setActiveThreadId(opened.session_id);
@@ -163,7 +163,6 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
         setOnboardingBedtime((prev) => prev || bed);
         setOnboardingStruggles((prev) => prev || playbookSummary.struggles || "");
         setOnboardingGoals((prev) => prev || playbookSummary.goals || "");
-        setOnboardingMotivationStyle((prev) => playbookSummary.motivationStyle || prev);
       }
     },
     [],
@@ -397,7 +396,6 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
         playbook: buildPlaybookSummary({
           struggles: onboardingStruggles,
           goals: onboardingGoals,
-          motivationStyle: onboardingMotivationStyle,
         }),
         health_anchors: buildHealthAnchors({
           wakeTime,
@@ -426,7 +424,6 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
     onboardingBedtime,
     onboardingFormValid,
     onboardingGoals,
-    onboardingMotivationStyle,
     onboardingSaving,
     onboardingStruggles,
     onboardingWakeTime,
@@ -444,14 +441,12 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
     onboardingBedtime,
     onboardingFormValid,
     onboardingGoals,
-    onboardingMotivationStyle,
     onboardingSaving,
     onboardingStruggles,
     onboardingWakeTime,
     profileContext,
     setOnboardingBedtime,
     setOnboardingGoals,
-    setOnboardingMotivationStyle,
     setOnboardingStruggles,
     setOnboardingWakeTime,
     timezone,

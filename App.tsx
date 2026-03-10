@@ -175,14 +175,12 @@ export default function App() {
     onboardingBedtime,
     onboardingFormValid,
     onboardingGoals,
-    onboardingMotivationStyle,
     onboardingSaving,
     onboardingStruggles,
     onboardingWakeTime,
     profileContext,
     setOnboardingBedtime,
     setOnboardingGoals,
-    setOnboardingMotivationStyle,
     setOnboardingStruggles,
     setOnboardingWakeTime,
     timezone,
@@ -209,7 +207,6 @@ export default function App() {
         onboardingBedtime={onboardingBedtime}
         onboardingStruggles={onboardingStruggles}
         onboardingGoals={onboardingGoals}
-        onboardingMotivationStyle={onboardingMotivationStyle}
         onboardingFormValid={onboardingFormValid}
         onboardingSaving={onboardingSaving}
         onboardingStatus={profileContext.onboarding_status}
@@ -217,7 +214,6 @@ export default function App() {
         setOnboardingBedtime={setOnboardingBedtime}
         setOnboardingStruggles={setOnboardingStruggles}
         setOnboardingGoals={setOnboardingGoals}
-        setOnboardingMotivationStyle={setOnboardingMotivationStyle}
         onCompleteOnboarding={() => {
           void onCompleteOnboarding();
         }}

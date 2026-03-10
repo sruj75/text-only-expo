@@ -1,4 +1,5 @@
 import type { EntryIntent } from "../types/chat";
+import type { StoredMessage } from "../types/chat";
 
 export const FOREGROUND_RESET_THRESHOLD_MS = 5 * 60 * 1000;
 export const INTENT_RECENCY_THRESHOLD_MS = 5 * 60 * 1000;
@@ -54,4 +55,16 @@ export const normalizeRealtimeIntent = (
       entry_mode: "reactive",
     },
   };
+};
+
+export const sliceVisibleConversation = (
+  messages: StoredMessage[],
+): StoredMessage[] => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const metadata = messages[index]?.metadata;
+    if (metadata && metadata.startup_turn === true) {
+      return messages.slice(index);
+    }
+  }
+  return messages;
 };

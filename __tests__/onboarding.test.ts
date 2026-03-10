@@ -28,19 +28,16 @@ describe("onboarding helpers", () => {
     const summary = buildPlaybookSummary({
       struggles: "I freeze when there are too many tasks.",
       goals: "Finish my top priority before noon.",
-      motivationStyle: "motivation"
     });
 
     expect(summary).toBe(
       "Struggles: I freeze when there are too many tasks.\n" +
-        "Goals: Finish my top priority before noon.\n" +
-        "Motivation style: Motivation"
+        "Goals: Finish my top priority before noon."
     );
 
     expect(parsePlaybookSummary(summary)).toEqual({
       struggles: "I freeze when there are too many tasks.",
       goals: "Finish my top priority before noon.",
-      motivationStyle: "motivation"
     });
   });
 
