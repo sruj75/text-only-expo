@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Intentive v0",
+    "name": "Intentive",
     "slug": "hackathon-intentive",
     "owner": "srujxx",
     "version": "1.0.0",
@@ -13,6 +13,7 @@
     "orientation": "portrait",
     "scheme": "intentive",
     "userInterfaceStyle": "light",
+    "icon": "./assets/images/icon.png",
     "splash": {
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
@@ -25,6 +26,7 @@
     ],
     "ios": {
       "supportsTablet": true,
+      "icon": "./assets/images/icon.png",
       "bundleIdentifier": "life.intentive.expo",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
