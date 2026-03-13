@@ -3,7 +3,6 @@ export type TriggerType =
   | "before_task"
   | "transition"
   | "after_task"
-  | "post_onboarding"
   | "checkin"
   | string;
 
@@ -24,8 +23,6 @@ export type EntryIntent = {
 export type ProfileContext = {
   wake_time: string | null;
   bedtime: string | null;
-  playbook: Record<string, unknown>;
-  health_anchors: string[];
   onboarding_status: string;
 };
 

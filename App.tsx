@@ -279,18 +279,9 @@ export default function App() {
     isSessionOpening,
     loading,
     needsOnboarding,
-    onCompleteOnboarding,
-    onboardingBedtime,
-    onboardingFormValid,
-    onboardingGoals,
-    onboardingSaving,
-    onboardingStruggles,
-    onboardingWakeTime,
+    onStartOnboarding,
+    onboardingStarting,
     profileContext,
-    setOnboardingBedtime,
-    setOnboardingGoals,
-    setOnboardingStruggles,
-    setOnboardingWakeTime,
     timezone,
     visibleConversationKey,
     visibleMessages,
@@ -316,19 +307,10 @@ export default function App() {
   if (needsOnboarding) {
     return (
       <OnboardingScreen
-        onboardingWakeTime={onboardingWakeTime}
-        onboardingBedtime={onboardingBedtime}
-        onboardingStruggles={onboardingStruggles}
-        onboardingGoals={onboardingGoals}
-        onboardingFormValid={onboardingFormValid}
-        onboardingSaving={onboardingSaving}
+        onboardingStarting={onboardingStarting}
         onboardingStatus={profileContext.onboarding_status}
-        setOnboardingWakeTime={setOnboardingWakeTime}
-        setOnboardingBedtime={setOnboardingBedtime}
-        setOnboardingStruggles={setOnboardingStruggles}
-        setOnboardingGoals={setOnboardingGoals}
-        onCompleteOnboarding={() => {
-          void onCompleteOnboarding();
+        onStartOnboarding={() => {
+          void onStartOnboarding();
         }}
       />
     );

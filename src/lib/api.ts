@@ -10,13 +10,16 @@ type PushTokenPayload = {
   timezone: string;
 };
 
-type CompleteOnboardingPayload = {
+type OnboardingStartPayload = {
+  device_id: string;
+  timezone: string;
+};
+
+type OnboardingSleepSchedulePayload = {
   device_id: string;
   timezone: string;
   wake_time: string;
   bedtime: string;
-  playbook: string;
-  health_anchors: string[];
 };
 
 type SessionOpenPayload = {
@@ -100,13 +103,27 @@ export const registerPushToken = async (
   });
 };
 
-export const completeOnboarding = async (
+export const startOnboarding = async (
   baseUrl: string,
-  payload: CompleteOnboardingPayload,
+  payload: OnboardingStartPayload,
 ): Promise<{ status: string; needs_onboarding: boolean; profile_context: ProfileContext }> => {
   return request<{ status: string; needs_onboarding: boolean; profile_context: ProfileContext }>(
     baseUrl,
-    "/agent/onboarding/complete",
+    "/agent/onboarding/start",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+};
+
+export const saveOnboardingSleepSchedule = async (
+  baseUrl: string,
+  payload: OnboardingSleepSchedulePayload,
+): Promise<{ status: string; needs_onboarding: boolean; profile_context: ProfileContext }> => {
+  return request<{ status: string; needs_onboarding: boolean; profile_context: ProfileContext }>(
+    baseUrl,
+    "/agent/onboarding/sleep-schedule",
     {
       method: "POST",
       body: JSON.stringify(payload),

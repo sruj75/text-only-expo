@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  completeOnboarding,
   openSession,
   registerPushToken,
+  saveOnboardingSleepSchedule,
+  startOnboarding,
   taskManagementAction,
   taskQueryAction
 } from "../src/lib/api";
@@ -58,31 +59,47 @@ describe("api client", () => {
     });
   });
 
-  it("submits onboarding form", async () => {
+  it("starts onboarding", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ status: "ok", needs_onboarding: false, profile_context: {} })
     });
 
-    await completeOnboarding("http://localhost:8000", {
+    await startOnboarding("http://localhost:8000", {
       device_id: "device-10",
-      timezone: "Asia/Kolkata",
-      wake_time: "07:30",
-      bedtime: "23:30",
-      playbook: "Help me start tiny when I am stuck",
-      health_anchors: ["Breakfast", "Walk"]
+      timezone: "Asia/Kolkata"
     });
 
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://localhost:8000/agent/onboarding/complete");
+    expect(url).toBe("http://localhost:8000/agent/onboarding/start");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      device_id: "device-10",
+      timezone: "Asia/Kolkata"
+    });
+  });
+
+  it("saves onboarding sleep schedule", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ status: "ok", needs_onboarding: false, profile_context: {} })
+    });
+
+    await saveOnboardingSleepSchedule("http://localhost:8000", {
+      device_id: "device-10",
+      timezone: "Asia/Kolkata",
+      wake_time: "07:30",
+      bedtime: "23:30"
+    });
+
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:8000/agent/onboarding/sleep-schedule");
     expect(init.method).toBe("POST");
     expect(JSON.parse(String(init.body))).toEqual({
       device_id: "device-10",
       timezone: "Asia/Kolkata",
       wake_time: "07:30",
-      bedtime: "23:30",
-      playbook: "Help me start tiny when I am stuck",
-      health_anchors: ["Breakfast", "Walk"]
+      bedtime: "23:30"
     });
   });
 

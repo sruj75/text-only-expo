@@ -2,12 +2,12 @@ import Constants from "expo-constants";
 import * as Linking from "expo-linking";
 import * as Notifications from "expo-notifications";
 import { AppState } from "react-native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
-  completeOnboarding,
   openSession,
   registerPushToken,
+  startOnboarding,
 } from "../lib/api";
 import { getOrCreateDeviceContext } from "../lib/device";
 import {
@@ -15,13 +15,6 @@ import {
   RELEASE_ID,
   generateOpenId,
 } from "../lib/runtimeContract";
-import {
-  buildHealthAnchors,
-  buildPlaybookSummary,
-  formatTimeForDisplay,
-  parsePlaybookSummary,
-  parseTimeInput,
-} from "../lib/onboarding";
 import {
   normalizeRealtimeIntent,
   sliceVisibleConversation,
@@ -48,8 +41,6 @@ const MANUAL_CONTEXT: EntryContext = {
 const DEFAULT_PROFILE_CONTEXT: ProfileContext = {
   wake_time: null,
   bedtime: null,
-  playbook: {},
-  health_anchors: [],
   onboarding_status: "pending",
 };
 
@@ -96,14 +87,6 @@ const parseEntryIntentFromUrl = (url: string): EntryIntent | null => {
   return parseEntryIntentFromData(normalized);
 };
 
-const parsePlaybookNotes = (profileContext: ProfileContext | undefined): string => {
-  if (!profileContext || !profileContext.playbook) {
-    return "";
-  }
-  const notes = profileContext.playbook.notes;
-  return typeof notes === "string" ? notes : "";
-};
-
 type UseSessionLifecycleArgs = {
   backendUrl: string;
 };
@@ -121,12 +104,7 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
   const [profileContext, setProfileContext] = useState<ProfileContext>(DEFAULT_PROFILE_CONTEXT);
   const [initialTaskPanelState, setInitialTaskPanelState] =
     useState<TaskPanelSnapshot | null>(null);
-
-  const [onboardingWakeTime, setOnboardingWakeTime] = useState<string>("");
-  const [onboardingBedtime, setOnboardingBedtime] = useState<string>("");
-  const [onboardingStruggles, setOnboardingStruggles] = useState<string>("");
-  const [onboardingGoals, setOnboardingGoals] = useState<string>("");
-  const [onboardingSaving, setOnboardingSaving] = useState<boolean>(false);
+  const [onboardingStarting, setOnboardingStarting] = useState<boolean>(false);
 
   const appStateRef = useRef(AppState.currentState);
   const lastBackgroundAtRef = useRef<number | null>(null);
@@ -169,17 +147,6 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
       setProfileContext(opened.profile_context || DEFAULT_PROFILE_CONTEXT);
       setVisibleConversationKey(nextConversationKey);
       setInitialTaskPanelState(nextNeedsOnboarding ? null : opened.task_panel_state || null);
-
-      if (nextNeedsOnboarding) {
-        const wake = formatTimeForDisplay(opened.profile_context?.wake_time);
-        const bed = formatTimeForDisplay(opened.profile_context?.bedtime);
-        const notes = parsePlaybookNotes(opened.profile_context);
-        const playbookSummary = parsePlaybookSummary(notes);
-        setOnboardingWakeTime((prev) => prev || wake);
-        setOnboardingBedtime((prev) => prev || bed);
-        setOnboardingStruggles((prev) => prev || playbookSummary.struggles || "");
-        setOnboardingGoals((prev) => prev || playbookSummary.goals || "");
-      }
     },
     [],
   );
@@ -385,73 +352,22 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
     };
   }, [deviceId, openAndApplySession, timezone]);
 
-  const normalizedWakeTime = useMemo(
-    () => parseTimeInput(onboardingWakeTime),
-    [onboardingWakeTime],
-  );
-  const normalizedBedtime = useMemo(
-    () => parseTimeInput(onboardingBedtime),
-    [onboardingBedtime],
-  );
-  const onboardingFormValid = useMemo(
-    () =>
-      Boolean(normalizedWakeTime) &&
-      Boolean(normalizedBedtime) &&
-      onboardingStruggles.trim().length >= 3 &&
-      onboardingGoals.trim().length >= 3,
-    [normalizedBedtime, normalizedWakeTime, onboardingGoals, onboardingStruggles],
-  );
+  const onStartOnboarding = useCallback(async () => {
+    if (!deviceId || onboardingStarting) return;
 
-  const onCompleteOnboarding = useCallback(async () => {
-    if (!deviceId || !onboardingFormValid || onboardingSaving) return;
-    const wakeTime = parseTimeInput(onboardingWakeTime);
-    const bedtime = parseTimeInput(onboardingBedtime);
-    if (!wakeTime || !bedtime) return;
-
-    setOnboardingSaving(true);
+    setOnboardingStarting(true);
     try {
-      await completeOnboarding(backendUrl, {
+      await startOnboarding(backendUrl, {
         device_id: deviceId,
         timezone,
-        wake_time: wakeTime,
-        bedtime,
-        playbook: buildPlaybookSummary({
-          struggles: onboardingStruggles,
-          goals: onboardingGoals,
-        }),
-        health_anchors: buildHealthAnchors({
-          wakeTime,
-          bedtime,
-          goals: onboardingGoals,
-        }),
       });
-      await openAndApplySession(deviceId, timezone, {
-        entry_context: {
-          source: "manual",
-          event_id: null,
-          trigger_type: "post_onboarding",
-          scheduled_time: null,
-          calendar_event_id: null,
-          entry_mode: "proactive",
-        },
-      });
+      await openAndApplySession(deviceId, timezone, null);
     } catch (onboardingError) {
-      console.warn("Failed to complete onboarding", onboardingError);
+      console.warn("Failed to start onboarding", onboardingError);
     } finally {
-      setOnboardingSaving(false);
+      setOnboardingStarting(false);
     }
-  }, [
-    backendUrl,
-    deviceId,
-    onboardingBedtime,
-    onboardingFormValid,
-    onboardingGoals,
-    onboardingSaving,
-    onboardingStruggles,
-    onboardingWakeTime,
-    openAndApplySession,
-    timezone,
-  ]);
+  }, [backendUrl, deviceId, onboardingStarting, openAndApplySession, timezone]);
 
   return {
     activeThreadId,
@@ -460,18 +376,9 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
     isSessionOpening,
     loading,
     needsOnboarding,
-    onCompleteOnboarding,
-    onboardingBedtime,
-    onboardingFormValid,
-    onboardingGoals,
-    onboardingSaving,
-    onboardingStruggles,
-    onboardingWakeTime,
+    onStartOnboarding,
+    onboardingStarting,
     profileContext,
-    setOnboardingBedtime,
-    setOnboardingGoals,
-    setOnboardingStruggles,
-    setOnboardingWakeTime,
     timezone,
     visibleConversationKey,
     visibleMessages,
