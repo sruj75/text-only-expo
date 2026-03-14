@@ -87,6 +87,22 @@ const parseEntryIntentFromUrl = (url: string): EntryIntent | null => {
   return parseEntryIntentFromData(normalized);
 };
 
+const buildEntryIntentKey = (intent: EntryIntent | null): string | null => {
+  if (!intent) {
+    return null;
+  }
+  const context = intent.entry_context;
+  return [
+    intent.session_id || "",
+    context.source,
+    context.event_id || "",
+    context.trigger_type || "",
+    context.scheduled_time || "",
+    context.calendar_event_id || "",
+    context.entry_mode,
+  ].join("|");
+};
+
 type UseSessionLifecycleArgs = {
   backendUrl: string;
 };
@@ -110,6 +126,7 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
   const lastBackgroundAtRef = useRef<number | null>(null);
   const sessionRequestTokenRef = useRef<number>(0);
   const pendingSessionOpensRef = useRef<number>(0);
+  const lastHandledIntentKeyRef = useRef<string | null>(null);
   const staleSessionFallbackRef = useRef<{
     token: number;
     opened: SessionOpenResponse;
@@ -200,6 +217,27 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
     [applyOpenedSession, backendUrl, markSessionOpenFinished, markSessionOpenStarted],
   );
 
+  const resolveInitialEntryIntent = useCallback(async (): Promise<EntryIntent | null> => {
+    const notificationResponse = await Notifications.getLastNotificationResponseAsync();
+    if (notificationResponse) {
+      const payload = notificationResponse.notification.request.content.data as Record<string, unknown>;
+      const intent = parseEntryIntentFromData(payload);
+      if (intent) {
+        return normalizeRealtimeIntent(intent);
+      }
+    }
+
+    const initialUrl = await Linking.getInitialURL();
+    if (initialUrl) {
+      const intent = parseEntryIntentFromUrl(initialUrl);
+      if (intent) {
+        return normalizeRealtimeIntent(intent);
+      }
+    }
+
+    return null;
+  }, []);
+
   const syncPushToken = useCallback(
     async (currentDeviceId: string, currentTimezone: string) => {
       const permissions = await Notifications.getPermissionsAsync();
@@ -242,12 +280,14 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
         const nextTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
         const context = await getOrCreateDeviceContext(nextTimezone);
         const nextDeviceId = context.device_id;
+        const initialIntent = await resolveInitialEntryIntent();
         if (cancelled) return;
 
         setTimezone(nextTimezone);
         setDeviceId(nextDeviceId);
         setLoading(false);
-        void openAndApplySession(nextDeviceId, nextTimezone, null).catch((setupSessionError) => {
+        lastHandledIntentKeyRef.current = buildEntryIntentKey(initialIntent);
+        void openAndApplySession(nextDeviceId, nextTimezone, initialIntent).catch((setupSessionError) => {
           console.warn("Failed to open startup session", setupSessionError);
         });
         void syncPushToken(nextDeviceId, nextTimezone).catch((tokenError) => {
@@ -266,38 +306,31 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
     return () => {
       cancelled = true;
     };
-  }, [openAndApplySession, syncPushToken]);
+  }, [openAndApplySession, resolveInitialEntryIntent, syncPushToken]);
 
   useEffect(() => {
     const notificationSub = Notifications.addNotificationResponseReceivedListener((response) => {
       const payload = response.notification.request.content.data as Record<string, unknown>;
       const intent = parseEntryIntentFromData(payload);
       if (intent) {
-        setPendingEntryIntent(normalizeRealtimeIntent(intent));
-      }
-    });
-
-    void Notifications.getLastNotificationResponseAsync().then((response) => {
-      if (!response) return;
-      const payload = response.notification.request.content.data as Record<string, unknown>;
-      const intent = parseEntryIntentFromData(payload);
-      if (intent) {
-        setPendingEntryIntent(normalizeRealtimeIntent(intent));
+        const normalizedIntent = normalizeRealtimeIntent(intent);
+        const intentKey = buildEntryIntentKey(normalizedIntent);
+        if (intentKey && intentKey === lastHandledIntentKeyRef.current) {
+          return;
+        }
+        setPendingEntryIntent(normalizedIntent);
       }
     });
 
     const urlSub = Linking.addEventListener("url", ({ url }) => {
       const intent = parseEntryIntentFromUrl(url);
       if (intent) {
-        setPendingEntryIntent(normalizeRealtimeIntent(intent));
-      }
-    });
-
-    void Linking.getInitialURL().then((url) => {
-      if (!url) return;
-      const intent = parseEntryIntentFromUrl(url);
-      if (intent) {
-        setPendingEntryIntent(normalizeRealtimeIntent(intent));
+        const normalizedIntent = normalizeRealtimeIntent(intent);
+        const intentKey = buildEntryIntentKey(normalizedIntent);
+        if (intentKey && intentKey === lastHandledIntentKeyRef.current) {
+          return;
+        }
+        setPendingEntryIntent(normalizedIntent);
       }
     });
 
@@ -309,6 +342,7 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
 
   useEffect(() => {
     if (!pendingEntryIntent || !deviceId) return;
+    lastHandledIntentKeyRef.current = buildEntryIntentKey(pendingEntryIntent);
     void openAndApplySession(deviceId, timezone, pendingEntryIntent)
       .catch((sessionError) => {
         console.warn("Failed to process entry intent", sessionError);
@@ -341,6 +375,9 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
         if (!shouldResetVisibleConversation(awayForMs)) {
           return;
         }
+        if (pendingEntryIntent) {
+          return;
+        }
         void openAndApplySession(deviceId, timezone, null).catch((error) => {
           console.warn("Failed to refresh conversation on foreground", error);
         });
@@ -350,7 +387,7 @@ export const useSessionLifecycle = ({ backendUrl }: UseSessionLifecycleArgs) => 
     return () => {
       subscription.remove();
     };
-  }, [deviceId, openAndApplySession, timezone]);
+  }, [deviceId, openAndApplySession, pendingEntryIntent, timezone]);
 
   const onStartOnboarding = useCallback(async () => {
     if (!deviceId || onboardingStarting) return;
